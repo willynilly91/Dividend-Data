@@ -36,7 +36,6 @@ FREQ_MULTIPLIER = {
     "Annual": 1
 }
 
-
 def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
     if is_tsx:
         url = f"https://dividendhistory.org/payout/tsx/{symbol.replace('.TO', '')}/"
@@ -69,7 +68,6 @@ def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
         print(f"[DHO ERROR] {symbol}: {e}")
         return None, None, None
 
-
 def get_dividend_data_from_yf(ticker_obj: yf.Ticker):
     try:
         divs = ticker_obj.dividends
@@ -79,14 +77,12 @@ def get_dividend_data_from_yf(ticker_obj: yf.Ticker):
         print(f"[YF DIV ERROR] {ticker_obj.ticker}: {e}")
     return None, None
 
-
 def get_price(ticker_obj: yf.Ticker) -> float | None:
     try:
         return float(ticker_obj.fast_info.get("last_price") or ticker_obj.info.get("regularMarketPrice"))
     except Exception as e:
         print(f"[PRICE ERROR] {ticker_obj.ticker}: {e}")
         return None
-
 
 def process_ticker(symbol: str, is_tsx: bool) -> dict:
     try:
@@ -100,11 +96,11 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
 
         if last_div is None:
             last_div, last_date = get_dividend_data_from_yf(t)
-            freq_text = None
+            if last_div is not None:
+                freq_text = "Monthly"  # Default fallback
 
         multiplier = FREQ_MULTIPLIER.get(freq_text, None)
-        forward_div = last_div * multiplier if last_div and multiplier else None
-        forward_yield = (forward_div / price * 100) if forward_div and price else None
+        forward_yield = ((last_div * multiplier) / price * 100) if last_div and multiplier and price else None
 
         return {
             "Last Updated (UTC)": datetime.utcnow().isoformat() + "Z",
@@ -115,7 +111,6 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
             "Last Dividend": last_div,
             "Last Dividend Date": last_date,
             "Frequency": freq_text,
-            "Forward Dividend (Annualized)": forward_div,
             "Yield (Forward) %": round(forward_yield, 3) if forward_yield else None
         }
 
@@ -130,10 +125,8 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
             "Last Dividend": None,
             "Last Dividend Date": None,
             "Frequency": None,
-            "Forward Dividend (Annualized)": None,
             "Yield (Forward) %": None
         }
-
 
 def build_csv(ticker_file: str, is_tsx: bool, output_file: str):
     tickers = load_ticker_list(ticker_file)
@@ -143,7 +136,6 @@ def build_csv(ticker_file: str, is_tsx: bool, output_file: str):
     df.to_csv(output_file, index=False)
     print(f"Saved {output_file}")
 
-
 def main():
     try:
         build_csv("tickers_canada.txt", is_tsx=True, output_file="etf_yields_canada.csv")
@@ -151,7 +143,6 @@ def main():
     except Exception as e:
         print(f"[FATAL] Script failed: {e}")
         raise
-
 
 if __name__ == "__main__":
     main()
