@@ -38,7 +38,6 @@ FREQ_MULTIPLIER = {
 
 
 def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
-    """Scrape dividendhistory.org for last dividend and frequency."""
     if is_tsx:
         url = f"https://dividendhistory.org/payout/tsx/{symbol.replace('.TO', '')}/"
     else:
@@ -48,7 +47,6 @@ def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
         response = requests.get(url, timeout=10)
         tree = html.fromstring(response.content)
 
-        # Get frequency
         freq_texts = tree.xpath('//div[contains(@class,"col")]/text()')
         frequency = None
         for line in freq_texts:
@@ -56,7 +54,6 @@ def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
                 frequency = line.strip().split("Frequency:")[-1].strip()
                 break
 
-        # Get last dividend
         dividend_dates = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[1]/text()')
         dividend_values = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[3]/text()')
 
@@ -68,7 +65,8 @@ def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
 
         return last_dividend, last_dividend_date, frequency
 
-    except Exception:
+    except Exception as e:
+        print(f"[DHO ERROR] {symbol}: {e}")
         return None, None, None
 
 
@@ -77,48 +75,64 @@ def get_dividend_data_from_yf(ticker_obj: yf.Ticker):
         divs = ticker_obj.dividends
         if divs is not None and not divs.empty:
             return float(divs.iloc[-1]), str(divs.index[-1].date())
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[YF DIV ERROR] {ticker_obj.ticker}: {e}")
     return None, None
 
 
 def get_price(ticker_obj: yf.Ticker) -> float | None:
     try:
         return float(ticker_obj.fast_info.get("last_price") or ticker_obj.info.get("regularMarketPrice"))
-    except Exception:
+    except Exception as e:
+        print(f"[PRICE ERROR] {ticker_obj.ticker}: {e}")
         return None
 
 
 def process_ticker(symbol: str, is_tsx: bool) -> dict:
-    t = yf.Ticker(symbol)
-    name = t.info.get("shortName") or t.info.get("longName")
-    price = get_price(t)
-    currency = t.info.get("currency")
+    try:
+        print(f"Processing: {symbol}")
+        t = yf.Ticker(symbol)
+        name = t.info.get("shortName") or t.info.get("longName")
+        price = get_price(t)
+        currency = t.info.get("currency")
 
-    # Try DHO first for dividend
-    last_div, last_date, freq_text = get_dividend_data_from_dho(symbol, is_tsx)
+        last_div, last_date, freq_text = get_dividend_data_from_dho(symbol, is_tsx)
 
-    if last_div is None:
-        # Fallback to Yahoo Finance
-        last_div, last_date = get_dividend_data_from_yf(t)
-        freq_text = None  # unknown frequency
+        if last_div is None:
+            last_div, last_date = get_dividend_data_from_yf(t)
+            freq_text = None
 
-    multiplier = FREQ_MULTIPLIER.get(freq_text, None)
-    forward_div = last_div * multiplier if last_div and multiplier else None
-    forward_yield = (forward_div / price * 100) if forward_div and price else None
+        multiplier = FREQ_MULTIPLIER.get(freq_text, None)
+        forward_div = last_div * multiplier if last_div and multiplier else None
+        forward_yield = (forward_div / price * 100) if forward_div and price else None
 
-    return {
-        "Last Updated (UTC)": datetime.utcnow().isoformat() + "Z",
-        "Ticker": symbol,
-        "Name": name,
-        "Price": price,
-        "Currency": currency,
-        "Last Dividend": last_div,
-        "Last Dividend Date": last_date,
-        "Frequency": freq_text,
-        "Forward Dividend (Annualized)": forward_div,
-        "Yield (Forward) %": round(forward_yield, 3) if forward_yield else None
-    }
+        return {
+            "Last Updated (UTC)": datetime.utcnow().isoformat() + "Z",
+            "Ticker": symbol,
+            "Name": name,
+            "Price": price,
+            "Currency": currency,
+            "Last Dividend": last_div,
+            "Last Dividend Date": last_date,
+            "Frequency": freq_text,
+            "Forward Dividend (Annualized)": forward_div,
+            "Yield (Forward) %": round(forward_yield, 3) if forward_yield else None
+        }
+
+    except Exception as e:
+        print(f"[ERROR] Failed to process {symbol}: {e}")
+        return {
+            "Last Updated (UTC)": datetime.utcnow().isoformat() + "Z",
+            "Ticker": symbol,
+            "Name": None,
+            "Price": None,
+            "Currency": None,
+            "Last Dividend": None,
+            "Last Dividend Date": None,
+            "Frequency": None,
+            "Forward Dividend (Annualized)": None,
+            "Yield (Forward) %": None
+        }
 
 
 def build_csv(ticker_file: str, is_tsx: bool, output_file: str):
@@ -135,7 +149,7 @@ def main():
         build_csv("tickers_canada.txt", is_tsx=True, output_file="etf_yields_canada.csv")
         build_csv("tickers_us.txt", is_tsx=False, output_file="etf_yields_us.csv")
     except Exception as e:
-        print(f"Script failed: {e}")
+        print(f"[FATAL] Script failed: {e}")
         raise
 
 
