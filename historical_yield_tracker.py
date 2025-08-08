@@ -29,12 +29,23 @@ def load_ticker_list(filename: str) -> list[str]:
         return []
 
 # ---------------------------
+# Ticker sanitization
+# ---------------------------
+def sanitize_symbol_for_yfinance(symbol: str, is_tsx: bool) -> str:
+    clean = symbol.split(":")[-1].replace("-UN", ".UN").replace(".TO", "").replace(".NE", "")
+    if is_tsx:
+        return f"{clean}.TO"
+    return clean
+
+def sanitize_symbol_for_dividendhistory(symbol: str) -> str:
+    return symbol.split(":")[-1].replace(".TO", "").replace(".NE", "")
+
+# ---------------------------
 # Get historical dividend data
 # ---------------------------
 def scrape_dividends(symbol: str, is_tsx: bool):
     try:
-        # Remove exchange prefix for scraping
-        clean_symbol = symbol.split(":")[-1]
+        clean_symbol = sanitize_symbol_for_dividendhistory(symbol)
         if is_tsx:
             url = f"https://dividendhistory.org/payout/tsx/{clean_symbol}/"
         else:
@@ -73,18 +84,12 @@ def process_ticker_history(symbol: str, is_tsx: bool) -> pd.DataFrame:
     print(f"Processing historical yield: {symbol}")
     records = []
 
-    # Try dividendhistory.org first
     entries = scrape_dividends(symbol, is_tsx)
     source = "dividendhistory.org"
 
     if not entries:
         try:
-            clean_symbol = symbol.split(":")[-1]
-            if is_tsx:
-                yf_symbol = f"{clean_symbol}.TO"
-            else:
-                yf_symbol = clean_symbol
-
+            yf_symbol = sanitize_symbol_for_yfinance(symbol, is_tsx)
             t = yf.Ticker(yf_symbol)
             divs = t.dividends
 
@@ -97,7 +102,8 @@ def process_ticker_history(symbol: str, is_tsx: bool) -> pd.DataFrame:
 
     for ex_date, div in entries:
         try:
-            price = get_price_on_date(symbol, ex_date)
+            yf_symbol = sanitize_symbol_for_yfinance(symbol, is_tsx)
+            price = get_price_on_date(yf_symbol, ex_date)
             div = float(div)
             if price:
                 annual_yield = (div * 12 / price) * 100
