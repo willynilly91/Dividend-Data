@@ -62,20 +62,20 @@ def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
         else:
             last_dividend_date, last_dividend = None, None
 
-        return last_dividend, last_dividend_date, frequency
+        return last_dividend, last_dividend_date, frequency, "dividendhistory.org"
 
     except Exception as e:
         print(f"[DHO ERROR] {symbol}: {e}")
-        return None, None, None
+        return None, None, None, None
 
 def get_dividend_data_from_yf(ticker_obj: yf.Ticker):
     try:
         divs = ticker_obj.dividends
         if divs is not None and not divs.empty:
-            return float(divs.iloc[-1]), str(divs.index[-1].date())
+            return float(divs.iloc[-1]), str(divs.index[-1].date()), "yfinance"
     except Exception as e:
         print(f"[YF DIV ERROR] {ticker_obj.ticker}: {e}")
-    return None, None
+    return None, None, None
 
 def get_price(ticker_obj: yf.Ticker) -> float | None:
     try:
@@ -92,10 +92,11 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
         price = get_price(t)
         currency = t.info.get("currency")
 
-        last_div, last_date, freq_text = get_dividend_data_from_dho(symbol, is_tsx)
+        last_div, last_date, freq_text, remarks = get_dividend_data_from_dho(symbol, is_tsx)
 
         if last_div is None:
-            last_div, last_date = get_dividend_data_from_yf(t)
+            last_div, last_date, fallback_remarks = get_dividend_data_from_yf(t)
+            remarks = fallback_remarks
             if last_div is not None:
                 freq_text = "Monthly"  # Default fallback
 
@@ -111,7 +112,8 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
             "Last Dividend": last_div,
             "Last Dividend Date": last_date,
             "Frequency": freq_text,
-            "Yield (Forward) %": round(forward_yield, 3) if forward_yield else None
+            "Yield (Forward) %": round(forward_yield, 3) if forward_yield else None,
+            "Remarks": remarks
         }
 
     except Exception as e:
@@ -125,7 +127,8 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
             "Last Dividend": None,
             "Last Dividend Date": None,
             "Frequency": None,
-            "Yield (Forward) %": None
+            "Yield (Forward) %": None,
+            "Remarks": "Error"
         }
 
 def build_csv(ticker_file: str, is_tsx: bool, output_file: str):
