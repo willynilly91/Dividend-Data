@@ -1,10 +1,10 @@
 # daily_etf_yield_tracker.py
 """
-Fetches ETF live prices, latest dividends, and payout frequency from Yahoo Finance
-and dividendhistory.org, calculates forward yield, and exports to CSV.
+Fetches ETF live prices from Yahoo Finance
+and dividend data (amount, date, frequency) from dividendhistory.org,
+calculates forward yield, and exports to CSV.
 
-Designed to run daily via GitHub Actions (free) and be imported dynamically into
-Google Sheets via =IMPORTDATA("<raw GitHub CSV URL>")
+Sorted by yield. US and Canadian tickers are separated.
 """
 
 import requests
@@ -16,13 +16,8 @@ from datetime import datetime
 # ---------------------------
 # CONFIG: List your tickers here
 # ---------------------------
-TICKERS = [
-    "HYLD.TO",  # TSX
-    "JEPI",     # NYSE
-    "QYLD",     # NASDAQ
-    "XYLD",     # NASDAQ
-    "RY.TO"     # Canadian bank
-]
+CANADIAN_TICKERS = ["HYLD.TO", "RY.TO"]
+US_TICKERS = ["JEPI", "QYLD", "XYLD"]
 
 # ---------------------------
 # Frequency map from text
@@ -38,25 +33,42 @@ FREQ_MULTIPLIER = {
 }
 
 
-def get_frequency_from_dividendhistory(ticker: str, is_tsx: bool) -> str | None:
+def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
+    """Scrape dividendhistory.org for last dividend and frequency."""
     if is_tsx:
-        url = f"https://dividendhistory.org/payout/tsx/{ticker.replace('.TO', '')}/"
+        url = f"https://dividendhistory.org/payout/tsx/{symbol.replace('.TO', '')}/"
     else:
-        url = f"https://dividendhistory.org/payout/{ticker}/"
+        url = f"https://dividendhistory.org/payout/{symbol}/"
 
     try:
         response = requests.get(url, timeout=10)
         tree = html.fromstring(response.content)
+
+        # Get frequency
         freq_texts = tree.xpath('//div[contains(@class,"col")]/text()')
+        frequency = None
         for line in freq_texts:
             if "Frequency:" in line:
-                return line.strip().split("Frequency:")[-1].strip()
+                frequency = line.strip().split("Frequency:")[-1].strip()
+                break
+
+        # Get last dividend
+        dividend_dates = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[1]/text()')
+        dividend_values = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[3]/text()')
+
+        if dividend_dates and dividend_values:
+            last_dividend_date = dividend_dates[0].strip()
+            last_dividend = float(dividend_values[0].strip())
+        else:
+            last_dividend_date, last_dividend = None, None
+
+        return last_dividend, last_dividend_date, frequency
+
     except Exception:
-        return None
-    return None
+        return None, None, None
 
 
-def get_last_dividend(ticker_obj: yf.Ticker) -> tuple[float | None, str | None]:
+def get_dividend_data_from_yf(ticker_obj: yf.Ticker):
     try:
         divs = ticker_obj.dividends
         if divs is not None and not divs.empty:
@@ -73,15 +85,21 @@ def get_price(ticker_obj: yf.Ticker) -> float | None:
         return None
 
 
-def process_ticker(symbol: str) -> dict:
-    is_tsx = symbol.endswith(".TO")
+def process_ticker(symbol: str, is_tsx: bool) -> dict:
     t = yf.Ticker(symbol)
     name = t.info.get("shortName") or t.info.get("longName")
     price = get_price(t)
-    last_div, last_date = get_last_dividend(t)
-    freq_text = get_frequency_from_dividendhistory(symbol, is_tsx)
-    multiplier = FREQ_MULTIPLIER.get(freq_text, None)
+    currency = t.info.get("currency")
 
+    # Try DHO first for dividend
+    last_div, last_date, freq_text = get_dividend_data_from_dho(symbol, is_tsx)
+
+    if last_div is None:
+        # Fallback to Yahoo Finance
+        last_div, last_date = get_dividend_data_from_yf(t)
+        freq_text = None  # unknown frequency
+
+    multiplier = FREQ_MULTIPLIER.get(freq_text, None)
     forward_div = last_div * multiplier if last_div and multiplier else None
     forward_yield = (forward_div / price * 100) if forward_div and price else None
 
@@ -90,7 +108,7 @@ def process_ticker(symbol: str) -> dict:
         "Ticker": symbol,
         "Name": name,
         "Price": price,
-        "Currency": t.info.get("currency"),
+        "Currency": currency,
         "Last Dividend": last_div,
         "Last Dividend Date": last_date,
         "Frequency": freq_text,
@@ -99,12 +117,17 @@ def process_ticker(symbol: str) -> dict:
     }
 
 
-def main():
-    data = [process_ticker(t) for t in TICKERS]
+def build_csv(tickers, is_tsx: bool, filename: str):
+    data = [process_ticker(t, is_tsx) for t in tickers]
     df = pd.DataFrame(data)
     df = df.sort_values(by="Yield (Forward) %", ascending=False)
-    df.to_csv("etf_yields.csv", index=False)
-    print("Saved etf_yields.csv")
+    df.to_csv(filename, index=False)
+    print(f"Saved {filename}")
+
+
+def main():
+    build_csv(CANADIAN_TICKERS, is_tsx=True, filename="etf_yields_canada.csv")
+    build_csv(US_TICKERS, is_tsx=False, filename="etf_yields_us.csv")
 
 
 if __name__ == "__main__":
