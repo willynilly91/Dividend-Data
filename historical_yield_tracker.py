@@ -1,117 +1,158 @@
+# historical_yield_tracker.py
+"""
+Fetches dividend history from dividendhistory.org,
+gets historical prices from Yahoo Finance on ex-dividend dates,
+calculates annualized yields per entry,
+and saves historical data to CSV.
+
+- Appends new entries (no overwrite)
+- Generates a second CSV with mean and standard deviation per ticker
+- Falls back to yfinance if dividendhistory.org fails
+- Designed to be run periodically (e.g. quarterly)
+"""
+
 import os
-import csv
-import yfinance as yf
-import pandas as pd
 import requests
+import pandas as pd
 from lxml import html
+import yfinance as yf
 from datetime import datetime
 
-def get_dividend_history(ticker, is_cad):
-    if is_cad:
-        url = f"https://dividendhistory.org/payout/tsx/{ticker}/"
-    else:
-        url = f"https://dividendhistory.org/payout/{ticker}/"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-
+# ---------------------------
+# Load tickers
+# ---------------------------
+def load_ticker_list(filename: str) -> list[str]:
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        tree = html.fromstring(response.content)
-
-        rows = tree.xpath('//*[@id="dividend_table"]/tbody/tr')
-        history = []
-        for row in rows:
-            columns = row.xpath("td")
-            if len(columns) >= 3:
-                ex_date = columns[0].text_content().strip()
-                amount = columns[2].text_content().strip().replace('$', '')
-                try:
-                    history.append({
-                        "ex_date": datetime.strptime(ex_date, "%b %d, %Y").strftime("%Y-%m-%d"),
-                        "amount": float(amount)
-                    })
-                except:
-                    continue
-        return history
-    except Exception as e:
-        print(f"Error fetching dividend data for {ticker}: {e}")
+        with open(filename, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+    except Exception:
         return []
 
-def get_price_on_date(ticker, date):
+# ---------------------------
+# Get historical dividend data
+# ---------------------------
+def scrape_dividends(symbol: str, is_tsx: bool):
     try:
-        df = yf.download(ticker, start=date, end=date, progress=False)
-        if not df.empty:
-            return float(df["Close"].iloc[0])
+        # Remove exchange prefix for scraping
+        clean_symbol = symbol.split(":")[-1]
+        if is_tsx:
+            url = f"https://dividendhistory.org/payout/tsx/{clean_symbol}/"
+        else:
+            url = f"https://dividendhistory.org/payout/{clean_symbol}/"
+
+        response = requests.get(url, timeout=10)
+        tree = html.fromstring(response.content)
+
+        dates = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[1]/text()')
+        dividends = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[3]/text()')
+
+        return list(zip(dates, dividends))
+
     except Exception as e:
-        print(f"Error fetching price for {ticker} on {date}: {e}")
+        print(f"[DIV ERROR] {symbol}: {e}")
+        return []
+
+# ---------------------------
+# Get historical price from Yahoo Finance
+# ---------------------------
+def get_price_on_date(symbol: str, date_str: str) -> float | None:
+    try:
+        t = yf.Ticker(symbol)
+        date = pd.to_datetime(date_str)
+        hist = t.history(start=date.strftime('%Y-%m-%d'), end=(date + pd.Timedelta(days=1)).strftime('%Y-%m-%d'))
+        if not hist.empty:
+            return float(hist.iloc[0]['Close'])
+    except Exception as e:
+        print(f"[PRICE ERROR] {symbol} on {date_str}: {e}")
     return None
 
-def load_existing_data(csv_file):
-    if os.path.exists(csv_file):
-        return pd.read_csv(csv_file)
-    return pd.DataFrame(columns=["Ticker", "Ex-Date", "Dividend", "Price", "Yield (%)"])
+# ---------------------------
+# Process a single ticker
+# ---------------------------
+def process_ticker_history(symbol: str, is_tsx: bool) -> pd.DataFrame:
+    print(f"Processing historical yield: {symbol}")
+    records = []
 
-def append_new_data(df, new_data):
-    combined = pd.concat([df, new_data], ignore_index=True)
-    combined.drop_duplicates(subset=["Ticker", "Ex-Date"], keep="last", inplace=True)
-    return combined
+    # Try dividendhistory.org first
+    entries = scrape_dividends(symbol, is_tsx)
+    source = "dividendhistory.org"
 
-def process_tickers(ticker_list_path, output_csv, stats_csv, is_cad):
-    tickers = []
-    with open(ticker_list_path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                parts = line.split(":")
-                if len(parts) == 2:
-                    tickers.append(parts[1] if is_cad else parts[1])
+    if not entries:
+        try:
+            clean_symbol = symbol.split(":")[-1]
+            if is_tsx:
+                yf_symbol = f"{clean_symbol}.TO"
+            else:
+                yf_symbol = clean_symbol
 
-    existing_df = load_existing_data(output_csv)
-    new_rows = []
+            t = yf.Ticker(yf_symbol)
+            divs = t.dividends
 
-    for ticker in tickers:
-        print(f"Processing {ticker}...")
-        history = get_dividend_history(ticker, is_cad)
+            if not divs.empty:
+                entries = [(d.strftime("%Y-%m-%d"), a) for d, a in divs.items()]
+                source = "yfinance"
+        except Exception as e:
+            print(f"[YF FALLBACK ERROR] {symbol}: {e}")
+            entries = []
 
-        for record in history:
-            ex_date = record["ex_date"]
-            dividend = record["amount"]
-            price = get_price_on_date(f"{ticker}.TO" if is_cad else ticker, ex_date)
-
+    for ex_date, div in entries:
+        try:
+            price = get_price_on_date(symbol, ex_date)
+            div = float(div)
             if price:
-                annual_yield = round((dividend * 12 / price) * 100, 2)  # Assuming monthly
-                new_rows.append({
-                    "Ticker": ticker,
-                    "Ex-Date": ex_date,
-                    "Dividend": dividend,
-                    "Price": price,
-                    "Yield (%)": annual_yield
+                annual_yield = (div * 12 / price) * 100
+                records.append({
+                    "Ticker": symbol,
+                    "Ex-Div Date": ex_date,
+                    "Dividend": div,
+                    "Price on Ex-Date": round(price, 3),
+                    "Annualized Yield %": round(annual_yield, 3),
+                    "Source": source
                 })
+        except Exception as e:
+            print(f"[RECORD ERROR] {symbol} on {ex_date}: {e}")
 
-    new_df = pd.DataFrame(new_rows)
-    final_df = append_new_data(existing_df, new_df)
-    final_df.to_csv(output_csv, index=False)
+    return pd.DataFrame(records)
 
-    # Stats
-    stats = final_df.groupby("Ticker")["Yield (%)"].agg(["mean", "std"]).reset_index()
-    stats.rename(columns={"mean": "Mean Yield (%)", "std": "Std Dev (%)"}, inplace=True)
-    stats.sort_values(by="Mean Yield (%)", ascending=False, inplace=True)
-    stats.to_csv(stats_csv, index=False)
+# ---------------------------
+# Append new data to master CSV
+# ---------------------------
+def update_history_csv(df: pd.DataFrame, path: str):
+    if os.path.exists(path):
+        existing = pd.read_csv(path)
+        combined = pd.concat([existing, df])
+        combined.drop_duplicates(subset=["Ticker", "Ex-Div Date"], inplace=True)
+        combined.to_csv(path, index=False)
+    else:
+        df.to_csv(path, index=False)
 
-# Main execution
+# ---------------------------
+# Generate summary stats
+# ---------------------------
+def generate_summary_stats(history_csv: str, output_csv: str):
+    df = pd.read_csv(history_csv)
+    stats = df.groupby("Ticker")["Annualized Yield %"].agg(["mean", "std"]).reset_index()
+    stats.columns = ["Ticker", "Mean Yield %", "Std Dev %"]
+    stats = stats.sort_values(by="Mean Yield %", ascending=False)
+    stats.to_csv(output_csv, index=False)
+    print(f"Saved summary: {output_csv}")
+
+# ---------------------------
+# Main
+# ---------------------------
+def main():
+    for filename, is_tsx, outfile in [
+        ("tickers_canada.txt", True, "historical_yield_canada.csv"),
+        ("tickers_us.txt", False, "historical_yield_us.csv")
+    ]:
+        tickers = load_ticker_list(filename)
+        for symbol in tickers:
+            df = process_ticker_history(symbol, is_tsx)
+            if not df.empty:
+                update_history_csv(df, outfile)
+
+    generate_summary_stats("historical_yield_canada.csv", "yield_stats_canada.csv")
+    generate_summary_stats("historical_yield_us.csv", "yield_stats_us.csv")
+
 if __name__ == "__main__":
-    process_tickers(
-        ticker_list_path="tickers_us.txt",
-        output_csv="historical_yield_us.csv",
-        stats_csv="yield_stats_us.csv",
-        is_cad=False
-    )
-
-    process_tickers(
-        ticker_list_path="tickers_canada.txt",
-        output_csv="historical_yield_canada.csv",
-        stats_csv="yield_stats_canada.csv",
-        is_cad=True
-    )
+    main()
