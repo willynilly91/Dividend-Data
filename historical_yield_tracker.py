@@ -20,6 +20,8 @@ import pandas as pd
 from lxml import html
 import yfinance as yf
 from datetime import datetime
+import time
+import random
 
 # ---------------------------
 # Constants and Caching
@@ -42,7 +44,8 @@ def save_cache():
 def load_ticker_list(filename: str) -> list[str]:
     try:
         with open(filename, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            tickers = [line.strip().replace("$", "") for line in f if line.strip() and not line.startswith("#")]
+            return list(set(tickers))
     except Exception:
         return []
 
@@ -122,6 +125,8 @@ def get_latest_ex_date(path: str, symbol: str) -> str:
 # Process a single ticker
 # ---------------------------
 def process_ticker_history(symbol: str, is_tsx: bool, existing_csv: str) -> pd.DataFrame:
+    original_symbol = symbol
+    symbol = symbol.replace("$", "")
     print(f"Processing historical yield: {symbol}")
     records = []
     latest_date = get_latest_ex_date(existing_csv, symbol)
@@ -159,6 +164,7 @@ def process_ticker_history(symbol: str, is_tsx: bool, existing_csv: str) -> pd.D
                     "Frequency": freq,
                     "Source": source
                 })
+            time.sleep(random.uniform(0.5, 1.2))  # help avoid rate limits
         except Exception as e:
             print(f"[RECORD ERROR] {symbol} on {ex_date}: {e}")
 
@@ -179,7 +185,7 @@ def update_history_csv(df: pd.DataFrame, path: str):
 # ---------------------------
 # Generate summary stats
 # ---------------------------
-def generate_summary_stats(stats_output_path: str, history_csv: str):
+def generate_summary_stats(history_csv: str, stats_output_path: str):
     df = pd.read_csv(history_csv)
     if "Annualized Yield %" not in df.columns or df.empty:
         print(f"[SKIP STATS] {history_csv} is empty or malformed.")
@@ -194,15 +200,15 @@ def generate_summary_stats(stats_output_path: str, history_csv: str):
 # Main
 # ---------------------------
 def main():
-    for filename, is_tsx, stats_outfile, history_outfile in [
+    for filename, is_tsx, history_outfile, stats_outfile in [
         ("tickers_canada.txt", True, "historical_yield_canada.csv", "yield_stats_canada.csv"),
         ("tickers_us.txt", False, "historical_yield_us.csv", "yield_stats_us.csv")
     ]:
         tickers = load_ticker_list(filename)
         for symbol in tickers:
-            df = process_ticker_history(symbol, is_tsx, stats_outfile)
+            df = process_ticker_history(symbol, is_tsx, history_outfile)
             if not df.empty:
-                update_history_csv(df, stats_outfile)
+                update_history_csv(df, history_outfile)
 
         generate_summary_stats(history_outfile, stats_outfile)
 
