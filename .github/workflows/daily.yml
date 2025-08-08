@@ -2,7 +2,7 @@ name: Daily ETF Yield Tracker
 
 on:
   schedule:
-    - cron: "0 12 * * *"  # Runs every day at 12:00 UTC
+    - cron: "0 12 * * *"
   workflow_dispatch:
 
 jobs:
@@ -22,13 +22,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install yfinance pandas lxml requests
 
-      - name: Run the ETF yield script
-        run: python daily_etf_yield_tracker.py
+      - name: Run the ETF yield script with full logging
+        run: |
+          set -x
+          python daily_etf_yield_tracker.py || true
 
-      - name: Commit results
+      - name: Show contents of output directory
+        run: |
+          echo "Files generated:"
+          ls -lh
+
+      - name: Commit results if available
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add etf_yields_canada.csv etf_yields_us.csv
-          git commit -m "Auto-update ETF yields" || echo "No changes to commit"
-          git push
+          git add etf_yields_*.csv || true
+          git commit -m "Auto-update ETF yields" || echo "Nothing to commit"
+          git push || echo "Push failed or nothing to push"
