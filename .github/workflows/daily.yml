@@ -1,36 +1,32 @@
-name: Run Daily ETF Yield Tracker
+name: Daily ETF Yield Update
 
 on:
   schedule:
-    - cron: '0 12 * * *'  # Runs every day at 12:00 UTC
-  workflow_dispatch:      # Allows you to trigger manually too
+    - cron: "0 12 * * *"  # Every day at 12:00 UTC
+  workflow_dispatch:
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
-      with:
-        persist-credentials: true  # Required to push
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
 
-    - name: Install dependencies
-      run: |
-        pip install yfinance pandas lxml requests
+      - name: Install dependencies
+        run: pip install yfinance pandas lxml requests
 
-    - name: Run script
-      run: python daily_etf_yield_tracker.py
+      - name: Run ETF yield tracker
+        run: python daily_etf_yield_tracker.py
 
-    - name: Commit and push CSV files
-      run: |
-        git config --local user.name "github-actions"
-        git config --local user.email "github-actions@github.com"
-        git add etf_yields_canada.csv etf_yields_us.csv
-        git commit -m "Update ETF yield data" || echo "No changes to commit"
-        git push
+      - name: Commit results
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add etf_yields_canada.csv etf_yields_us.csv
+          git commit -m "Daily ETF yield update [skip ci]" || echo "No changes to commit"
+          git push
