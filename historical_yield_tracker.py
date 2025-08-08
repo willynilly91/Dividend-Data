@@ -8,15 +8,32 @@ and saves historical data to CSV.
 - Appends new entries (no overwrite)
 - Generates a second CSV with mean and standard deviation per ticker
 - Falls back to yfinance if dividendhistory.org fails
+- Implements caching to reduce rate limits and repeated requests
 - Designed to be run periodically (e.g. quarterly)
 """
 
 import os
+import json
 import requests
 import pandas as pd
 from lxml import html
 import yfinance as yf
 from datetime import datetime
+
+# ---------------------------
+# Constants and Caching
+# ---------------------------
+CACHE_FILE = "price_cache.json"
+
+if os.path.exists(CACHE_FILE):
+    with open(CACHE_FILE, "r") as f:
+        price_cache = json.load(f)
+else:
+    price_cache = {}
+
+def save_cache():
+    with open(CACHE_FILE, "w") as f:
+        json.dump(price_cache, f)
 
 # ---------------------------
 # Load tickers
@@ -64,15 +81,21 @@ def scrape_dividends(symbol: str, is_tsx: bool):
         return []
 
 # ---------------------------
-# Get historical price from Yahoo Finance
+# Get historical price from Yahoo Finance (with caching)
 # ---------------------------
 def get_price_on_date(symbol: str, date_str: str) -> float | None:
+    key = f"{symbol}_{date_str}"
+    if key in price_cache:
+        return price_cache[key]
+
     try:
         t = yf.Ticker(symbol)
         date = pd.to_datetime(date_str)
         hist = t.history(start=date.strftime('%Y-%m-%d'), end=(date + pd.Timedelta(days=1)).strftime('%Y-%m-%d'))
         if not hist.empty:
-            return float(hist.iloc[0]['Close'])
+            price = float(hist.iloc[0]['Close'])
+            price_cache[key] = price
+            return price
     except Exception as e:
         print(f"[PRICE ERROR] {symbol} on {date_str}: {e}")
     return None
@@ -137,6 +160,9 @@ def update_history_csv(df: pd.DataFrame, path: str):
 # ---------------------------
 def generate_summary_stats(history_csv: str, output_csv: str):
     df = pd.read_csv(history_csv)
+    if "Annualized Yield %" not in df.columns or df.empty:
+        print(f"[SKIP STATS] {history_csv} is empty or malformed.")
+        return
     stats = df.groupby("Ticker")["Annualized Yield %"].agg(["mean", "std"]).reset_index()
     stats.columns = ["Ticker", "Mean Yield %", "Std Dev %"]
     stats = stats.sort_values(by="Mean Yield %", ascending=False)
@@ -159,6 +185,7 @@ def main():
 
     generate_summary_stats("historical_yield_canada.csv", "yield_stats_canada.csv")
     generate_summary_stats("historical_yield_us.csv", "yield_stats_us.csv")
+    save_cache()
 
 if __name__ == "__main__":
     main()
