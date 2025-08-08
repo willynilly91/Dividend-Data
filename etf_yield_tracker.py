@@ -14,10 +14,14 @@ import yfinance as yf
 from datetime import datetime
 
 # ---------------------------
-# CONFIG: List your tickers here
+# Load tickers from external text files
 # ---------------------------
-CANADIAN_TICKERS = ["HYLD.TO", "RY.TO"]
-US_TICKERS = ["JEPI", "QYLD", "XYLD"]
+def load_ticker_list(filename: str) -> list[str]:
+    try:
+        with open(filename, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+    except Exception:
+        return []
 
 # ---------------------------
 # Frequency map from text
@@ -117,17 +121,18 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
     }
 
 
-def build_csv(tickers, is_tsx: bool, filename: str):
+def build_csv(ticker_file: str, is_tsx: bool, output_file: str):
+    tickers = load_ticker_list(ticker_file)
     data = [process_ticker(t, is_tsx) for t in tickers]
     df = pd.DataFrame(data)
     df = df.sort_values(by="Yield (Forward) %", ascending=False)
-    df.to_csv(filename, index=False)
-    print(f"Saved {filename}")
+    df.to_csv(output_file, index=False)
+    print(f"Saved {output_file}")
 
 
 def main():
-    build_csv(CANADIAN_TICKERS, is_tsx=True, filename="etf_yields_canada.csv")
-    build_csv(US_TICKERS, is_tsx=False, filename="etf_yields_us.csv")
+    build_csv("tickers_canada.txt", is_tsx=True, output_file="etf_yields_canada.csv")
+    build_csv("tickers_us.txt", is_tsx=False, output_file="etf_yields_us.csv")
 
 
 if __name__ == "__main__":
