@@ -22,20 +22,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install yfinance pandas lxml requests
 
-      - name: Run the ETF yield script with full logging
-        run: |
-          set -x
-          python daily_etf_yield_tracker.py || true
+      - name: Run Python script
+        run: python daily_etf_yield_tracker.py
 
-      - name: Show contents of output directory
-        run: |
-          echo "Files generated:"
-          ls -lh
-
-      - name: Commit results if available
+      - name: Commit and push updated CSVs
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add etf_yields_*.csv || true
-          git commit -m "Auto-update ETF yields" || echo "Nothing to commit"
+          git add *.csv
+          git commit -m "Auto-update ETF yield data" || echo "Nothing to commit"
           git push || echo "Push failed or nothing to push"
