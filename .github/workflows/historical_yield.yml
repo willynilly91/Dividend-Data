@@ -1,40 +1,31 @@
-name: Run Historical Yield Script
+name: Run Historical ETF Yield Tracker
 
 on:
-  workflow_dispatch:  # run manually
-  schedule:
-    - cron: '0 5 1 * *'  # run on 1st of each month at 5:00 UTC
+  workflow_dispatch:
 
 jobs:
-  run-historical-script:
+  run-script:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
 
-    - name: Install dependencies
-      run: pip install requests pandas yfinance lxml
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-    - name: Run historical yield tracker
-      run: python historical_yield_tracker.py
+      - name: Run script
+        run: python historical_yield_tracker.py
 
-    - name: Configure git
-      run: |
-        git config user.name "github-actions"
-        git config user.email "github-actions@github.com"
-
-    - name: Add and commit changes
-      run: |
-        git add historical_yield_canada.csv historical_yield_us.csv yield_stats_canada.csv yield_stats_us.csv
-        git commit -m "Update historical yield data" || echo "No changes to commit"
-
-    - name: Push changes
-      uses: ad-m/github-push-action@v0.6.0
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit and push CSVs
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add historical_yield_*.csv
+          git commit -m "Auto-update historical yield data" || echo "No changes to commit"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
