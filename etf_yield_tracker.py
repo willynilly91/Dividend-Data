@@ -131,8 +131,12 @@ def build_csv(ticker_file: str, is_tsx: bool, output_file: str):
 
 
 def main():
-    build_csv("tickers_canada.txt", is_tsx=True, output_file="etf_yields_canada.csv")
-    build_csv("tickers_us.txt", is_tsx=False, output_file="etf_yields_us.csv")
+    try:
+        build_csv("tickers_canada.txt", is_tsx=True, output_file="etf_yields_canada.csv")
+        build_csv("tickers_us.txt", is_tsx=False, output_file="etf_yields_us.csv")
+    except Exception as e:
+        print(f"Script failed: {e}")
+        raise
 
 
 if __name__ == "__main__":
