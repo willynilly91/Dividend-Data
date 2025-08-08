@@ -1,59 +1,117 @@
 import os
-import pandas as pd
+import csv
 import yfinance as yf
+import pandas as pd
+import requests
+from lxml import html
 from datetime import datetime
-from utils import get_dividend_history  # assuming you already modularized scraping
 
-def ensure_csv_exists(path, headers):
-    if not os.path.exists(path):
-        pd.DataFrame(columns=headers).to_csv(path, index=False)
+def get_dividend_history(ticker, is_cad):
+    if is_cad:
+        url = f"https://dividendhistory.org/payout/tsx/{ticker}/"
+    else:
+        url = f"https://dividendhistory.org/payout/{ticker}/"
 
-def append_new_data(csv_path, new_data_df):
-    existing_df = pd.read_csv(csv_path)
-    combined_df = pd.concat([existing_df, new_data_df]).drop_duplicates()
-    combined_df.to_csv(csv_path, index=False)
-
-def main():
-    tickers = {
-        "canada": "tickers_canada.txt",
-        "us": "tickers_us.txt"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
     }
 
-    for region, file_path in tickers.items():
-        output_path = f"historical_yield_{region}.csv"
-        ensure_csv_exists(output_path, [
-            "Ticker", "Ex-Div Date", "Div Amount", "Ex-Div Price",
-            "Annualized Yield", "Source"
-        ])
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        tree = html.fromstring(response.content)
 
-        with open(file_path, "r") as f:
-            symbols = [line.strip() for line in f if line.strip()]
+        rows = tree.xpath('//*[@id="dividend_table"]/tbody/tr')
+        history = []
+        for row in rows:
+            columns = row.xpath("td")
+            if len(columns) >= 3:
+                ex_date = columns[0].text_content().strip()
+                amount = columns[2].text_content().strip().replace('$', '')
+                try:
+                    history.append({
+                        "ex_date": datetime.strptime(ex_date, "%b %d, %Y").strftime("%Y-%m-%d"),
+                        "amount": float(amount)
+                    })
+                except:
+                    continue
+        return history
+    except Exception as e:
+        print(f"Error fetching dividend data for {ticker}: {e}")
+        return []
 
-        all_data = []
+def get_price_on_date(ticker, date):
+    try:
+        df = yf.download(ticker, start=date, end=date, progress=False)
+        if not df.empty:
+            return float(df["Close"].iloc[0])
+    except Exception as e:
+        print(f"Error fetching price for {ticker} on {date}: {e}")
+    return None
 
-        for ticker in symbols:
-            try:
-                records = get_dividend_history(ticker)  # Returns list of dicts
-                for record in records:
-                    ex_date = record["Ex-Div Date"]
-                    ex_price = yf.Ticker(ticker).history(start=ex_date, end=ex_date).get("Close")
-                    price = ex_price.iloc[0] if not ex_price.empty else None
+def load_existing_data(csv_file):
+    if os.path.exists(csv_file):
+        return pd.read_csv(csv_file)
+    return pd.DataFrame(columns=["Ticker", "Ex-Date", "Dividend", "Price", "Yield (%)"])
 
-                    if price and record["Div Amount"]:
-                        yield_annualized = (float(record["Div Amount"]) * 12 / price) * 100
-                        all_data.append({
-                            "Ticker": ticker,
-                            "Ex-Div Date": ex_date,
-                            "Div Amount": record["Div Amount"],
-                            "Ex-Div Price": round(price, 2),
-                            "Annualized Yield": round(yield_annualized, 2),
-                            "Source": "DividendHistory.org"
-                        })
-            except Exception as e:
-                print(f"{ticker} failed: {e}")
+def append_new_data(df, new_data):
+    combined = pd.concat([df, new_data], ignore_index=True)
+    combined.drop_duplicates(subset=["Ticker", "Ex-Date"], keep="last", inplace=True)
+    return combined
 
-        df = pd.DataFrame(all_data)
-        append_new_data(output_path, df)
+def process_tickers(ticker_list_path, output_csv, stats_csv, is_cad):
+    tickers = []
+    with open(ticker_list_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                parts = line.split(":")
+                if len(parts) == 2:
+                    tickers.append(parts[1] if is_cad else parts[1])
 
+    existing_df = load_existing_data(output_csv)
+    new_rows = []
+
+    for ticker in tickers:
+        print(f"Processing {ticker}...")
+        history = get_dividend_history(ticker, is_cad)
+
+        for record in history:
+            ex_date = record["ex_date"]
+            dividend = record["amount"]
+            price = get_price_on_date(f"{ticker}.TO" if is_cad else ticker, ex_date)
+
+            if price:
+                annual_yield = round((dividend * 12 / price) * 100, 2)  # Assuming monthly
+                new_rows.append({
+                    "Ticker": ticker,
+                    "Ex-Date": ex_date,
+                    "Dividend": dividend,
+                    "Price": price,
+                    "Yield (%)": annual_yield
+                })
+
+    new_df = pd.DataFrame(new_rows)
+    final_df = append_new_data(existing_df, new_df)
+    final_df.to_csv(output_csv, index=False)
+
+    # Stats
+    stats = final_df.groupby("Ticker")["Yield (%)"].agg(["mean", "std"]).reset_index()
+    stats.rename(columns={"mean": "Mean Yield (%)", "std": "Std Dev (%)"}, inplace=True)
+    stats.sort_values(by="Mean Yield (%)", ascending=False, inplace=True)
+    stats.to_csv(stats_csv, index=False)
+
+# Main execution
 if __name__ == "__main__":
-    main()
+    process_tickers(
+        ticker_list_path="tickers_us.txt",
+        output_csv="historical_yield_us.csv",
+        stats_csv="yield_stats_us.csv",
+        is_cad=False
+    )
+
+    process_tickers(
+        ticker_list_path="tickers_canada.txt",
+        output_csv="historical_yield_canada.csv",
+        stats_csv="yield_stats_canada.csv",
+        is_cad=True
+    )
