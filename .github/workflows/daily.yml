@@ -15,4 +15,22 @@ jobs:
       with:
         persist-credentials: true  # Required to push
 
-    - name: S
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install yfinance pandas lxml requests
+
+    - name: Run script
+      run: python daily_etf_yield_tracker.py
+
+    - name: Commit and push CSV files
+      run: |
+        git config --local user.name "github-actions"
+        git config --local user.email "github-actions@github.com"
+        git add etf_yields_canada.csv etf_yields_us.csv
+        git commit -m "Update ETF yield data" || echo "No changes to commit"
+        git push
