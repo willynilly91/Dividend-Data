@@ -16,7 +16,18 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
+      - name: Install dependencies
+        run: |
+          pip install yfinance pandas lxml requests
+
+      - name: Run Python script
+        run: |
+          python daily_etf_yield_tracker.py
 
       - name: Commit and push CSVs
         run: |
