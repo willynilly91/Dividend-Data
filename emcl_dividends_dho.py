@@ -1,75 +1,44 @@
-# emcl_dividends_dho.py
-"""
-Scrape ALL dividend history for a single ticker (EMCL) from dividendhistory.org
-and write it to a CSV named `emcl_dividends_dho.csv`.
-
-This script ONLY touches EMCL and ONLY uses dividendhistory.org.
-It always writes the CSV (even if empty) so a CI workflow can commit it.
-"""
-
-from datetime import datetime
-from lxml import html
+import asyncio
 import pandas as pd
-import requests
+from playwright.async_api import async_playwright
 
-# -------- Settings --------
-TICKER_REPO_STYLE = "EMCL.NE"   # how it appears in your lists
-EMIT_TICKER = "EMCL"            # how it should appear in the CSV
-IS_TSX = True                    # Canadian route on dividendhistory.org
-OUT_CSV = "emcl_dividends_dho.csv"
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/125.0 Safari/537.36"
-    )
-}
+# -----------------
+# SETTINGS
+# -----------------
+TICKER = "EMCL"  # Change this if you want another ticker
+IS_TSX = True    # True = TSX path, False = US path
 
-# -------- Helpers --------
-def dh_symbol(symbol: str) -> str:
-    """Normalize repo-style symbols to dividendhistory.org slug."""
-    s = symbol.replace("$", "").split(":")[-1]
-    s = s.replace(".TO", "").replace(".NE", "").replace(".UN", "-UN")
-    return s
+async def scrape_dividend_history():
+    base_url = "https://dividendhistory.org/payout/"
+    url = f"{base_url}{'tsx/' if IS_TSX else ''}{TICKER}/"
+    output_csv = f"{TICKER.lower()}_dividendhistory_full.csv"
 
-# -------- Scraper --------
-def fetch_dividends_from_dividendhistory(symbol_repo_style: str, is_tsx: bool):
-    clean = dh_symbol(symbol_repo_style)
-    url = (
-        f"https://dividendhistory.org/payout/tsx/{clean}/"
-        if is_tsx
-        else f"https://dividendhistory.org/payout/{clean}/"
-    )
-    rows = []
-    try:
-        r = requests.get(url, timeout=20, headers=HEADERS)
-        r.raise_for_status()
-        tree = html.fromstring(r.content)
-        # iterate row-by-row to keep columns aligned even if structure shifts
-        for tr in tree.xpath('//*[@id="dividend_table"]//tr[td]'):
-            date_txt = "".join(tr.xpath('./td[1]//text()')).strip()
-            div_txt  = "".join(tr.xpath('./td[3]//text()')).strip()
-            if date_txt and div_txt:
-                rows.append((date_txt, div_txt))
-    except Exception as e:
-        print(f"[DIVHIST FAIL] {clean} ({url}): {e}")
-    return rows, url
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        print(f"🌐 Loading {url}")
+        await page.goto(url)
 
-# -------- Main --------
-def main():
-    rows, url = fetch_dividends_from_dividendhistory(TICKER_REPO_STYLE, IS_TSX)
+        # Try clicking "Show All" if it exists
+        try:
+            await page.click("button:has-text('Show All')")
+            await page.wait_for_timeout(2000)  # wait for table update
+            print("📄 Clicked 'Show All'")
+        except:
+            print("ℹ️ No 'Show All' button found")
 
-    # Build DataFrame (always) so CI can commit the CSV
-    if rows:
-        df = pd.DataFrame(rows, columns=["Ex-Div Date", "Dividend"]).sort_values("Ex-Div Date")
-        df.insert(0, "Ticker", EMIT_TICKER)
-        df["Source"] = "dividendhistory.org"
-        df["Scraped At"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
-    else:
-        df = pd.DataFrame(columns=["Ticker", "Ex-Div Date", "Dividend", "Source", "Scraped At"])  # empty with headers
+        # Wait until table rows are loaded
+        await page.wait_for_selector("#dividend_table tbody tr")
 
-    df.to_csv(OUT_CSV, index=False)
-    print(f"Saved {OUT_CSV} with {len(rows)} rows from {url}")
+        # Extract table into pandas DataFrame
+        html = await page.inner_html("#dividend_table")
+        df = pd.read_html(f"<table>{html}</table>")[0]
+
+        # Save to CSV
+        df.to_csv(output_csv, index=False)
+        print(f"✅ Saved {len(df)} rows to {output_csv}")
+
+        await browser.close()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(scrape_dividend_history())
