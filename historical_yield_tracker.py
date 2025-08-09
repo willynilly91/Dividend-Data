@@ -1,6 +1,4 @@
-Here's your corrected **historical_yield_tracker.py** with the newline bug fixed and ready to copy/paste:
 
-```python
 # historical_yield_tracker.py
 """
 Builds raw historical dividend records for Canada and US tickers.
