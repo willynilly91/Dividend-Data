@@ -28,18 +28,25 @@ async def scrape_dividend_history():
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         print(f"🌐 Loading {url}")
-        await page.goto(url)
+        await page.goto(url, timeout=60000)  # allow up to 60 seconds to load
 
-        # Try clicking "Show All" if present
+        # Wait for the dropdown to appear
         try:
-            await page.click("button:has-text('Show All')")
-            await page.wait_for_timeout(2000)  # Wait for the table to refresh
-            print("📄 Clicked 'Show All'")
+            await page.wait_for_selector("select[name='dividend_table_length']", timeout=30000)
+            # Select the maximum available (usually "100")
+            await page.select_option("select[name='dividend_table_length']", "100")
+            await page.wait_for_timeout(2000)  # wait for table refresh
+            print("📄 Selected 100 entries per page")
         except Exception as e:
-            print(f"ℹ️ No 'Show All' button found: {e}")
+            print(f"⚠️ Could not set page size: {e}")
 
-        # Wait until table rows are loaded
-        await page.wait_for_selector("#dividend_table tbody tr")
+        # Wait until table rows are loaded (max 60s)
+        try:
+            await page.wait_for_selector("#dividend_table tbody tr", timeout=60000)
+        except Exception as e:
+            print(f"❌ Table rows not found: {e}")
+            await browser.close()
+            return
 
         # Extract table into pandas DataFrame
         html = await page.inner_html("#dividend_table")
@@ -47,9 +54,4 @@ async def scrape_dividend_history():
 
         # Save to CSV
         df.to_csv(OUTPUT_CSV, index=False)
-        print(f"✅ Saved {len(df)} rows to {OUTPUT_CSV}")
-
-        await browser.close()
-
-if __name__ == "__main__":
-    asyncio.run(scrape_dividend_history())
+        print
