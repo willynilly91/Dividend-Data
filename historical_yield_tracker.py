@@ -1,218 +1,287 @@
 # historical_yield_tracker.py
 """
-Fetches dividend history from dividendhistory.org,
-gets historical prices from Yahoo Finance on ex-dividend dates,
-calculates annualized yields per entry based on frequency,
-and saves historical data to CSV.
+Builds raw historical dividend records for Canada and US tickers.
 
-- Appends new entries (no overwrite)
-- Skips existing data based on most recent date in CSV
-- Generates a second CSV with mean and standard deviation per ticker
-- Falls back to yfinance if dividendhistory.org fails
-- Implements caching to reduce rate limits and repeated requests
-- Designed to be run periodically (e.g. quarterly)
+• Dividends: scraped from dividendhistory.org (primary), yfinance (fallback)
+• Prices: Yahoo Finance raw Close on the ex-div date (cached)
+• Time window: last 5 years only
+• Output: historical_yield_canada.csv, historical_yield_us.csv (append, dedupe)
+• NOTE: This script intentionally leaves Frequency blank and does NOT compute
+  Annualized Yield % or stats. After this finishes, run frequency_inference.py
+  (or allow this script to invoke it automatically; see AUTO_RUN_INFERENCE).
 """
 
 import os
 import json
-import requests
-import pandas as pd
-from lxml import html
-import yfinance as yf
-from datetime import datetime
 import time
 import random
+from datetime import datetime, timedelta
+
+import pandas as pd
+import requests
+from lxml import html
+import yfinance as yf
 
 # ---------------------------
-# Constants and Caching
+# Settings
 # ---------------------------
-CACHE_FILE = "price_cache.json"
+PRICE_CACHE = "price_cache.json"
+AUTO_RUN_INFERENCE = True  # set False if you want to run frequency_inference.py separately
+SLEEP_SECS = (0.2, 0.6)    # jitter between requests to be gentle on sites
+YEARS_BACK = 5
 
-if os.path.exists(CACHE_FILE):
-    with open(CACHE_FILE, "r") as f:
-        price_cache = json.load(f)
+CANADA_TICKERS_FILE = "tickers_canada.txt"
+US_TICKERS_FILE = "tickers_us.txt"
+OUT_CANADA = "historical_yield_canada.csv"
+OUT_US = "historical_yield_us.csv"
+
+SINCE_DATE = (datetime.utcnow() - timedelta(days=365 * YEARS_BACK)).strftime("%Y-%m-%d")
+
+# ---------------------------
+# Cache helpers
+# ---------------------------
+if os.path.exists(PRICE_CACHE):
+    try:
+        with open(PRICE_CACHE, "r") as f:
+            PRICE_CACHE_MEM = json.load(f)
+    except Exception:
+        PRICE_CACHE_MEM = {}
 else:
-    price_cache = {}
+    PRICE_CACHE_MEM = {}
+
 
 def save_cache():
-    with open(CACHE_FILE, "w") as f:
-        json.dump(price_cache, f)
+    with open(PRICE_CACHE, "w") as f:
+        json.dump(PRICE_CACHE_MEM, f)
 
 # ---------------------------
-# Load tickers
+# Ticker IO
 # ---------------------------
-def load_ticker_list(filename: str) -> list[str]:
-    try:
-        with open(filename, "r", encoding="utf-8") as f:
-            tickers = [line.strip().replace("$", "") for line in f if line.strip() and not line.startswith("#")]
-            return list(set(tickers))
-    except Exception:
+
+def load_ticker_list(path: str) -> list[str]:
+    if not os.path.exists(path):
         return []
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [ln.strip() for ln in f if ln.strip() and not ln.startswith("#")] 
+    # de-dup while preserving order
+    seen = set()
+    out = []
+    for s in lines:
+        if s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
 
 # ---------------------------
-# Ticker sanitization
+# Symbol sanitization
 # ---------------------------
-def sanitize_symbol_for_yfinance(symbol: str, is_tsx: bool) -> str:
-    clean = symbol.replace("$", "").split(":")[-1].replace("-UN", ".UN").replace(".TO", "").replace(".NE", "")
-    return f"{clean}.TO" if is_tsx else clean
 
-def sanitize_symbol_for_dividendhistory(symbol: str) -> str:
-    return symbol.replace("$", "").split(":")[-1].replace(".TO", "").replace(".NE", "").replace(".UN", "-UN")
+def yf_symbol(symbol: str, is_tsx: bool) -> str:
+    # Normalize common vendor-specific notations to Yahoo Finance
+    # Examples: EIT-UN.TO -> EIT.UN.TO; EMCL.NE -> EMCL-NE? (YF lists NEO as .NE suffix is not used; many NEO funds trade on TSX too)
+    s = symbol.replace("$", "").split(":")[-1]
+    s = s.replace("-UN", ".UN")
+    if s.endswith(".TO") or s.endswith(".NE"):
+        # keep explicit vendor suffix if present (YF expects .TO; .NE tickers often actually list as .TO in YF)
+        if s.endswith(".NE"):
+            # Try without .NE first; many NEO listings mirror TSX symbols on YF
+            s = s.replace(".NE", "")
+    else:
+        if is_tsx:
+            s = f"{s}.TO"
+    return s
+
+
+def dh_symbol(symbol: str) -> str:
+    # Convert to dividendhistory.org format: TSX uses /payout/tsx/{sym}/, and
+    # hyphen UN format instead of dot UN
+    s = symbol.replace("$", "").split(":")[-1]
+    s = s.replace(".TO", "").replace(".NE", "").replace(".UN", "-UN")
+    return s
 
 # ---------------------------
-# Get historical dividend data
+# Scrapers
 # ---------------------------
-def scrape_dividends(symbol: str, is_tsx: bool):
+
+def fetch_dividends_from_dividendhistory(symbol: str, is_tsx: bool) -> list[tuple[str, str]]:
+    """Return list of (ex_date_str, dividend_str). Frequency is intentionally omitted."""
     try:
-        clean_symbol = sanitize_symbol_for_dividendhistory(symbol)
-        url = f"https://dividendhistory.org/payout/tsx/{clean_symbol}/" if is_tsx else f"https://dividendhistory.org/payout/{clean_symbol}/"
-        response = requests.get(url, timeout=10)
-        tree = html.fromstring(response.content)
-        dates = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[1]/text()')
-        dividends = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[3]/text()')
-        frequencies = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[4]/text()')
-        return list(zip(dates, dividends, frequencies))
+        clean = dh_symbol(symbol)
+        url = f"https://dividendhistory.org/payout/tsx/{clean}/" if is_tsx else f"https://dividendhistory.org/payout/{clean}/"
+        r = requests.get(url, timeout=12)
+        r.raise_for_status()
+        tree = html.fromstring(r.content)
+        dates = [d.strip() for d in tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[1]/text()')]
+        dividends = [v.strip() for v in tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[3]/text()')]
+        rows = []
+        for d, v in zip(dates, dividends):
+            if not d or not v:
+                continue
+            rows.append((d, v))
+        return rows
     except Exception as e:
-        print(f"[DIV ERROR] {symbol}: {e}")
+        print(f"[DIVHIST FAIL] {symbol}: {e}")
         return []
 
-# ---------------------------
-# Get historical price from Yahoo Finance (with caching)
-# ---------------------------
+
+def fetch_dividends_from_yf(symbol: str, is_tsx: bool) -> list[tuple[str, str]]:
+    try:
+        t = yf.Ticker(yf_symbol(symbol, is_tsx))
+        ser = t.dividends
+        if ser is None or ser.empty:
+            return []
+        # yfinance series index is Timestamp, values are dividend floats
+        rows = [(idx.strftime("%Y-%m-%d"), str(val)) for idx, val in ser.items()]
+        return rows
+    except Exception as e:
+        print(f"[YF DIV FAIL] {symbol}: {e}")
+        return []
+
+
 def get_price_on_date(symbol: str, date_str: str) -> float | None:
     key = f"{symbol}_{date_str}"
-    if key in price_cache:
-        return price_cache[key]
+    if key in PRICE_CACHE_MEM:
+        return PRICE_CACHE_MEM[key]
     try:
         t = yf.Ticker(symbol)
-        date = pd.to_datetime(date_str)
-        hist = t.history(start=date.strftime('%Y-%m-%d'), end=(date + pd.Timedelta(days=1)).strftime('%Y-%m-%d'))
+        dt = pd.to_datetime(date_str)
+        hist = t.history(start=dt.strftime('%Y-%m-%d'), end=(dt + pd.Timedelta(days=1)).strftime('%Y-%m-%d'))
         if not hist.empty:
-            price = float(hist.iloc[0]['Close'])
-            price_cache[key] = price
+            price = float(hist.iloc[0]['Close'])  # raw close, not adjusted
+            PRICE_CACHE_MEM[key] = price
             return price
     except Exception as e:
-        print(f"[PRICE ERROR] {symbol} on {date_str}: {e}")
+        print(f"[YF PRICE FAIL] {symbol} {date_str}: {e}")
     return None
 
 # ---------------------------
-# Frequency factor
+# CSV helpers
 # ---------------------------
-def freq_to_multiplier(freq: str) -> int:
-    mapping = {
-        "annual": 1,
-        "annually": 1,
-        "quarterly": 4,
-        "monthly": 12,
-        "semi-monthly": 24,
-        "bi-weekly": 26,
-        "weekly": 52
-    }
-    return mapping.get(freq.strip().lower(), 12)  # default to monthly
 
-# ---------------------------
-# Load most recent ex-date from history
-# ---------------------------
-def get_latest_ex_date(path: str, symbol: str) -> str:
-    if os.path.exists(path):
-        df = pd.read_csv(path)
-        df = df[df["Ticker"] == symbol]
-        if not df.empty:
-            return df["Ex-Div Date"].max()
-    return "1900-01-01"
+def latest_ex_date_in_csv(csv_path: str, ticker: str) -> str:
+    if not os.path.exists(csv_path):
+        return "1900-01-01"
+    try:
+        df = pd.read_csv(csv_path)
+        df = df[df["Ticker"] == ticker]
+        if df.empty:
+            return "1900-01-01"
+        return str(pd.to_datetime(df["Ex-Div Date"]).max().date())
+    except Exception:
+        return "1900-01-01"
 
-# ---------------------------
-# Process a single ticker
-# ---------------------------
-def process_ticker_history(symbol: str, is_tsx: bool, existing_csv: str) -> pd.DataFrame:
-    original_symbol = symbol
-    symbol = symbol.replace("$", "")
-    print(f"Processing historical yield: {symbol}")
-    records = []
-    latest_date = get_latest_ex_date(existing_csv, symbol)
-    entries = scrape_dividends(symbol, is_tsx)
-    source = "dividendhistory.org"
 
-    if not entries:
-        try:
-            yf_symbol = sanitize_symbol_for_yfinance(symbol, is_tsx)
-            t = yf.Ticker(yf_symbol)
-            divs = t.dividends
-            if not divs.empty:
-                entries = [(d.strftime("%Y-%m-%d"), a, "monthly") for d, a in divs.items()]  # fallback default freq
-                source = "yfinance"
-        except Exception as e:
-            print(f"[YF FALLBACK ERROR] {symbol}: {e}")
-            entries = []
-
-    for ex_date, div, freq in entries:
-        try:
-            if pd.to_datetime(ex_date) <= pd.to_datetime(latest_date):
-                continue  # skip old entries
-            yf_symbol = sanitize_symbol_for_yfinance(symbol, is_tsx)
-            price = get_price_on_date(yf_symbol, ex_date)
-            div = float(div)
-            if price:
-                multiplier = freq_to_multiplier(freq)
-                annual_yield = (div * multiplier / price) * 100
-                records.append({
-                    "Ticker": symbol,
-                    "Ex-Div Date": ex_date,
-                    "Dividend": div,
-                    "Price on Ex-Date": round(price, 3),
-                    "Annualized Yield %": round(annual_yield, 3),
-                    "Frequency": freq,
-                    "Source": source
-                })
-            time.sleep(random.uniform(0.5, 1.2))  # help avoid rate limits
-        except Exception as e:
-            print(f"[RECORD ERROR] {symbol} on {ex_date}: {e}")
-
-    return pd.DataFrame(records)
-
-# ---------------------------
-# Append new data to master CSV
-# ---------------------------
-def update_history_csv(df: pd.DataFrame, path: str):
-    if os.path.exists(path):
-        existing = pd.read_csv(path)
-        combined = pd.concat([existing, df])
-        combined.drop_duplicates(subset=["Ticker", "Ex-Div Date"], inplace=True)
-        combined.to_csv(path, index=False)
-    else:
-        df.to_csv(path, index=False)
-
-# ---------------------------
-# Generate summary stats
-# ---------------------------
-def generate_summary_stats(history_csv: str, stats_output_path: str):
-    df = pd.read_csv(history_csv)
-    if "Annualized Yield %" not in df.columns or df.empty:
-        print(f"[SKIP STATS] {history_csv} is empty or malformed.")
+def append_rows(csv_path: str, rows: list[dict]):
+    if not rows:
         return
-    stats = df.groupby("Ticker")["Annualized Yield %"].agg(["mean", "std"]).reset_index()
-    stats.columns = ["Ticker", "Mean Yield %", "Std Dev %"]
-    stats = stats.sort_values(by="Mean Yield %", ascending=False)
-    stats.to_csv(stats_output_path, index=False)
-    print(f"Saved summary: {stats_output_path}")
+    new_df = pd.DataFrame(rows)
+    if os.path.exists(csv_path):
+        try:
+            old = pd.read_csv(csv_path)
+            combined = pd.concat([old, new_df], ignore_index=True)
+            combined.drop_duplicates(subset=["Ticker", "Ex-Div Date"], inplace=True)
+            combined.sort_values(["Ticker", "Ex-Div Date"], inplace=True)
+            combined.to_csv(csv_path, index=False)
+            return
+        except Exception as e:
+            print(f"[CSV MERGE WARN] {csv_path}: {e}
+Falling back to overwrite.")
+    new_df.sort_values(["Ticker", "Ex-Div Date"], inplace=True)
+    new_df.to_csv(csv_path, index=False)
+
+# ---------------------------
+# Core processing
+# ---------------------------
+
+def process_universe(tickers: list[str], is_tsx: bool, out_csv: str):
+    since = pd.to_datetime(SINCE_DATE)
+    collected = []
+
+    for sym in tickers:
+        print(f"Processing {sym} ({'TSX' if is_tsx else 'US'})")
+        try:
+            # Existing checkpoint per ticker
+            last_in_csv = pd.to_datetime(latest_ex_date_in_csv(out_csv, sym))
+
+            # 1) pull dividends (dividendhistory first, yfinance fallback)
+            rows = fetch_dividends_from_dividendhistory(sym, is_tsx)
+            source = "dividendhistory.org"
+            if not rows:
+                rows = fetch_dividends_from_yf(sym, is_tsx)
+                source = "yfinance"
+
+            if not rows:
+                continue
+
+            # Normalize rows, filter by window and dedupe against CSV
+            for ex_date_str, div_str in rows:
+                try:
+                    ex_dt = pd.to_datetime(ex_date_str)
+                except Exception:
+                    continue
+                if ex_dt < since:
+                    continue
+                if ex_dt <= last_in_csv:
+                    continue
+
+                yf_sym = yf_symbol(sym, is_tsx)
+                price = get_price_on_date(yf_sym, ex_dt.strftime("%Y-%m-%d"))
+                if price is None:
+                    continue
+
+                # IMPORTANT: Frequency left blank intentionally; filled by frequency_inference.py
+                collected.append({
+                    "Ticker": sym,
+                    "Ex-Div Date": ex_dt.strftime("%Y-%m-%d"),
+                    "Dividend": _to_float(div_str),
+                    "Price on Ex-Date": round(price, 6),
+                    "Frequency": "",  # to be inferred later
+                    "Source": source,
+                    "Scraped At": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ"),
+                })
+
+                time.sleep(random.uniform(*SLEEP_SECS))
+        except Exception as e:
+            print(f"[PROCESS WARN] {sym}: {e}")
+
+    append_rows(out_csv, collected)
 
 # ---------------------------
 # Main
 # ---------------------------
-def main():
-    for filename, is_tsx, history_outfile, stats_outfile in [
-        ("tickers_canada.txt", True, "historical_yield_canada.csv", "yield_stats_canada.csv"),
-        ("tickers_us.txt", False, "historical_yield_us.csv", "yield_stats_us.csv")
-    ]:
-        tickers = load_ticker_list(filename)
-        for symbol in tickers:
-            df = process_ticker_history(symbol, is_tsx, history_outfile)
-            if not df.empty:
-                update_history_csv(df, history_outfile)
 
-        generate_summary_stats(history_outfile, stats_outfile)
+def main():
+    ca = load_ticker_list(CANADA_TICKERS_FILE)
+    us = load_ticker_list(US_TICKERS_FILE)
+
+    process_universe(ca, True, OUT_CANADA)
+    process_universe(us, False, OUT_US)
 
     save_cache()
+
+    if AUTO_RUN_INFERENCE and os.path.exists("frequency_inference.py"):
+        print("\n[INFO] Running frequency_inference.py to fill Frequency and recalc stats…\n")
+        # fire-and-forget; if it fails, continue silently
+        try:
+            # Prefer spawning a new process so module-level globals in that script are respected
+            exit_code = os.system("python frequency_inference.py")
+            print(f"[INFO] frequency_inference.py exit code: {exit_code}")
+        except Exception as e:
+            print(f"[WARN] Could not run frequency_inference.py: {e}")
+
+
+# local helper used above
+
+def _to_float(x):
+    s = str(x).strip().replace(",", "").replace("$", "")
+    if s in ("", "-", "—", "None", "nan", "NaN"):
+        return float("nan")
+    try:
+        return float(s)
+    except Exception:
+        s = "".join(ch for ch in s if (ch.isdigit() or ch == "." or ch == "-"))
+        return float(s) if s else float("nan")
+
 
 if __name__ == "__main__":
     main()
