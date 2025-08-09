@@ -2,14 +2,14 @@
 """
 Fetches ETF live prices from Yahoo Finance
 and dividend data (amount, date, frequency) from dividendhistory.org,
-calculates forward yield, and exports to CSV.
+calculates CURRENT yield, and exports to CSV.
 
-Now also merges historical stats (median/mean/std) and labels valuation:
-  - Underpriced   if Forward Yield % > Median + 1*Std
-  - Overpriced    if Forward Yield % < Median - 1*Std
+Also merges historical stats (median/mean/std) and labels valuation:
+  - Underpriced   if Current Yield (%) > Median + 1*Std
+  - Overpriced    if Current Yield (%) < Median - 1*Std
   - Fair Price    otherwise
 
-Sorted by forward yield. US and Canadian tickers are separated.
+Sorted by current yield. US and Canadian tickers are separated.
 """
 
 import os
@@ -68,24 +68,25 @@ def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
 
         if dividend_dates and dividend_values:
             last_dividend_date = dividend_dates[0].strip()
-            last_dividend = float(str(dividend_values[0]).strip().replace("$", "").replace(",", ""))
+            raw_val = str(dividend_values[0]).strip().replace("$", "").replace(",", "")
+            last_dividend = float(raw_val)
         else:
             last_dividend_date, last_dividend = None, None
 
-        return last_dividend, last_dividend_date, frequency, "dividendhistory.org"
+        return last_dividend, last_dividend_date, frequency
 
     except Exception as e:
         print(f"[DHO ERROR] {symbol}: {e}")
-        return None, None, None, None
+        return None, None, None
 
 def get_dividend_data_from_yf(ticker_obj: yf.Ticker):
     try:
         divs = ticker_obj.dividends
         if divs is not None and not divs.empty:
-            return float(divs.iloc[-1]), str(divs.index[-1].date()), "yfinance"
+            return float(divs.iloc[-1]), str(divs.index[-1].date())
     except Exception as e:
         print(f"[YF DIV ERROR] {ticker_obj.ticker}: {e}")
-    return None, None, None
+    return None, None
 
 def get_price(ticker_obj: yf.Ticker) -> float | None:
     try:
@@ -99,7 +100,7 @@ def get_price(ticker_obj: yf.Ticker) -> float | None:
 # ---------------------------
 def _merge_stats_and_valuation(daily_df: pd.DataFrame, stats_csv: str) -> pd.DataFrame:
     """
-    Merge in historical stats and compute Valuation based on Forward Yield % vs (median ± 1*std).
+    Merge in historical stats and compute Valuation based on Current Yield (%) vs (median ± 1*std).
     Adds columns:
       - Median Annualized Yield %
       - Mean Annualized Yield %
@@ -108,11 +109,9 @@ def _merge_stats_and_valuation(daily_df: pd.DataFrame, stats_csv: str) -> pd.Dat
     """
     out = daily_df.copy()
 
-    # Ensure the key column exists
     if "Ticker" not in out.columns:
         raise ValueError("daily_df missing required column: 'Ticker'")
 
-    # If stats CSV missing, add empty columns and bail gracefully
     if not os.path.exists(stats_csv):
         out["Median Annualized Yield %"] = pd.NA
         out["Mean Annualized Yield %"] = pd.NA
@@ -122,7 +121,7 @@ def _merge_stats_and_valuation(daily_df: pd.DataFrame, stats_csv: str) -> pd.Dat
 
     stats = pd.read_csv(stats_csv)
 
-    # Normalize possible legacy column names -> new names
+    # Normalize legacy headers if needed
     rename_map = {}
     if "Average Yield %" in stats.columns and "Median Annualized Yield %" not in stats.columns:
         rename_map["Average Yield %"] = "Median Annualized Yield %"
@@ -135,7 +134,6 @@ def _merge_stats_and_valuation(daily_df: pd.DataFrame, stats_csv: str) -> pd.Dat
 
     needed = {"Ticker", "Median Annualized Yield %", "Mean Annualized Yield %", "Std Dev %"}
     if not needed.issubset(stats.columns):
-        # Stats file exists but layout is unexpected; fail safe
         out["Median Annualized Yield %"] = pd.NA
         out["Mean Annualized Yield %"] = pd.NA
         out["Std Dev %"] = pd.NA
@@ -149,9 +147,8 @@ def _merge_stats_and_valuation(daily_df: pd.DataFrame, stats_csv: str) -> pd.Dat
     )
 
     # Compute valuation
-    # Using Forward Yield % from this daily sheet vs median ± 1*std
     def _label(row):
-        cur = row.get("Yield (Forward) %")
+        cur = row.get("Current Yield (%)")
         med = row.get("Median Annualized Yield %")
         sd  = row.get("Std Dev %")
         try:
@@ -177,21 +174,21 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
     try:
         print(f"Processing: {symbol}")
         t = yf.Ticker(symbol)
-        name = t.info.get("shortName") or t.info.get("longName")
+        info = t.info or {}
+        name = info.get("shortName") or info.get("longName")
         price = get_price(t)
-        currency = t.info.get("currency")
+        currency = info.get("currency")
 
-        last_div, last_date, freq_text, remarks = get_dividend_data_from_dho(symbol, is_tsx)
+        last_div, last_date, freq_text = get_dividend_data_from_dho(symbol, is_tsx)
 
         # Fallback if DHO fails
         if last_div is None:
-            last_div, last_date, fallback_remarks = get_dividend_data_from_yf(t)
-            remarks = fallback_remarks
+            last_div, last_date = get_dividend_data_from_yf(t)
             if last_div is not None and not freq_text:
                 freq_text = "Monthly"  # conservative default
 
         multiplier = FREQ_MULTIPLIER.get(freq_text, None)
-        forward_yield = ((last_div * multiplier) / price * 100) if (last_div and multiplier and price) else None
+        current_yield = ((last_div * multiplier) / price * 100) if (last_div and multiplier and price) else None
 
         return {
             "Last Updated (UTC)": datetime.utcnow().isoformat() + "Z",
@@ -202,8 +199,7 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
             "Last Dividend": last_div,
             "Last Dividend Date": last_date,
             "Frequency": freq_text,
-            "Yield (Forward) %": round(forward_yield, 3) if forward_yield is not None else None,
-            "Remarks": remarks
+            "Current Yield (%)": round(current_yield, 3) if current_yield is not None else None,
         }
 
     except Exception as e:
@@ -217,8 +213,7 @@ def process_ticker(symbol: str, is_tsx: bool) -> dict:
             "Last Dividend": None,
             "Last Dividend Date": None,
             "Frequency": None,
-            "Yield (Forward) %": None,
-            "Remarks": "Error"
+            "Current Yield (%)": None,
         }
 
 # ---------------------------
@@ -229,10 +224,10 @@ def build_csv(ticker_file: str, is_tsx: bool, output_file: str, stats_csv: str):
     data = [process_ticker(t, is_tsx) for t in tickers]
     df = pd.DataFrame(data)
 
-    # Merge stats, compute Valuation, then sort by forward yield
+    # Merge stats, compute Valuation, then sort by current yield
     df = _merge_stats_and_valuation(df, stats_csv)
-    if "Yield (Forward) %" in df.columns:
-        df = df.sort_values(by="Yield (Forward) %", ascending=False, na_position="last")
+    if "Current Yield (%)" in df.columns:
+        df = df.sort_values(by="Current Yield (%)", ascending=False, na_position="last")
 
     df.to_csv(output_file, index=False)
     print(f"Saved {output_file}")
@@ -245,13 +240,13 @@ def main():
         build_csv(
             "tickers_canada.txt",
             is_tsx=True,
-            output_file="etf_yields_canada.csv",
+            output_file="current_etf_yields_canada.csv",
             stats_csv="yield_stats_canada.csv",
         )
         build_csv(
             "tickers_us.txt",
             is_tsx=False,
-            output_file="etf_yields_us.csv",
+            output_file="current_etf_yields_us.csv",
             stats_csv="yield_stats_us.csv",
         )
     except Exception as e:
