@@ -1,88 +1,75 @@
-# dividendhistory_only_scraper.py
+# emcl_dividends_dho.py
 """
-Scrapes full historical dividend data from dividendhistory.org for all tickers in the Canadian and US ticker files.
-Does NOT use Yahoo Finance at all — only dividendhistory.org.
-Outputs: dividendhistory_only_canada.csv, dividendhistory_only_us.csv
+Scrape ALL dividend history for a single ticker (EMCL) from dividendhistory.org
+and write it to a CSV named `emcl_dividends_dho.csv`.
+
+This script ONLY touches EMCL and ONLY uses dividendhistory.org.
+It always writes the CSV (even if empty) so a CI workflow can commit it.
 """
 
-import os
-import time
-import random
 from datetime import datetime
+from lxml import html
 import pandas as pd
 import requests
-from lxml import html
 
-SLEEP_SECS = (0.2, 0.6)
-CANADA_TICKERS_FILE = "tickers_canada.txt"
-US_TICKERS_FILE = "tickers_us.txt"
-OUT_CANADA = "dividendhistory_only_canada.csv"
-OUT_US = "dividendhistory_only_us.csv"
+# -------- Settings --------
+TICKER_REPO_STYLE = "EMCL.NE"   # how it appears in your lists
+EMIT_TICKER = "EMCL"            # how it should appear in the CSV
+IS_TSX = True                    # Canadian route on dividendhistory.org
+OUT_CSV = "emcl_dividends_dho.csv"
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0 Safari/537.36"
+    )
+}
 
-# ---------------------------
-# Helpers
-# ---------------------------
-def load_ticker_list(path: str) -> list[str]:
-    if not os.path.exists(path):
-        return []
-    with open(path, "r", encoding="utf-8") as f:
-        return [ln.strip() for ln in f if ln.strip() and not ln.startswith("#")]
-
+# -------- Helpers --------
 def dh_symbol(symbol: str) -> str:
+    """Normalize repo-style symbols to dividendhistory.org slug."""
     s = symbol.replace("$", "").split(":")[-1]
     s = s.replace(".TO", "").replace(".NE", "").replace(".UN", "-UN")
     return s
 
-# ---------------------------
-# Scraper
-# ---------------------------
-def fetch_dividends_from_dividendhistory(symbol: str, is_tsx: bool) -> list[dict]:
+# -------- Scraper --------
+def fetch_dividends_from_dividendhistory(symbol_repo_style: str, is_tsx: bool):
+    clean = dh_symbol(symbol_repo_style)
+    url = (
+        f"https://dividendhistory.org/payout/tsx/{clean}/"
+        if is_tsx
+        else f"https://dividendhistory.org/payout/{clean}/"
+    )
+    rows = []
     try:
-        clean = dh_symbol(symbol)
-        url = f"https://dividendhistory.org/payout/tsx/{clean}/" if is_tsx else f"https://dividendhistory.org/payout/{clean}/"
-        r = requests.get(url, timeout=12)
+        r = requests.get(url, timeout=20, headers=HEADERS)
         r.raise_for_status()
         tree = html.fromstring(r.content)
-        dates = [d.strip() for d in tree.xpath('//*[@id="dividend_table"]//tr/td[1]//text()') if d.strip()]
-        dividends = [v.strip() for v in tree.xpath('//*[@id="dividend_table"]//tr/td[3]//text()') if v.strip()]
-        out = []
-        for d, v in zip(dates, dividends):
-            out.append({
-                "Ticker": symbol,
-                "Ex-Div Date": d,
-                "Dividend": v,
-                "Source": "dividendhistory.org",
-                "Scraped At": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ"),
-            })
-        return out
+        # iterate row-by-row to keep columns aligned even if structure shifts
+        for tr in tree.xpath('//*[@id="dividend_table"]//tr[td]'):
+            date_txt = "".join(tr.xpath('./td[1]//text()')).strip()
+            div_txt  = "".join(tr.xpath('./td[3]//text()')).strip()
+            if date_txt and div_txt:
+                rows.append((date_txt, div_txt))
     except Exception as e:
-        print(f"[DIVHIST FAIL] {symbol} ({url}): {e}")
-        return []
+        print(f"[DIVHIST FAIL] {clean} ({url}): {e}")
+    return rows, url
 
-# ---------------------------
-# Processing
-# ---------------------------
-def process_universe(tickers: list[str], is_tsx: bool, out_csv: str):
-    collected = []
-    for sym in tickers:
-        print(f"Processing {sym} ({'TSX' if is_tsx else 'US'})")
-        rows = fetch_dividends_from_dividendhistory(sym, is_tsx)
-        collected.extend(rows)
-        time.sleep(random.uniform(*SLEEP_SECS))
-    if collected:
-        pd.DataFrame(collected).to_csv(out_csv, index=False)
-        print(f"Saved {out_csv} with {len(collected)} rows.")
-    else:
-        print(f"No data collected for {out_csv}.")
-
-# ---------------------------
-# Main
-# ---------------------------
+# -------- Main --------
 def main():
-    ca = load_ticker_list(CANADA_TICKERS_FILE)
-    us = load_ticker_list(US_TICKERS_FILE)
-    process_universe(ca, True, OUT_CANADA)
-    process_universe(us, False, OUT_US)
+    rows, url = fetch_dividends_from_dividendhistory(TICKER_REPO_STYLE, IS_TSX)
+
+    # Build DataFrame (always) so CI can commit the CSV
+    if rows:
+        df = pd.DataFrame(rows, columns=["Ex-Div Date", "Dividend"]).sort_values("Ex-Div Date")
+        df.insert(0, "Ticker", EMIT_TICKER)
+        df["Source"] = "dividendhistory.org"
+        df["Scraped At"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+    else:
+        df = pd.DataFrame(columns=["Ticker", "Ex-Div Date", "Dividend", "Source", "Scraped At"])  # empty with headers
+
+    df.to_csv(OUT_CSV, index=False)
+    print(f"Saved {OUT_CSV} with {len(rows)} rows from {url}")
 
 if __name__ == "__main__":
     main()
