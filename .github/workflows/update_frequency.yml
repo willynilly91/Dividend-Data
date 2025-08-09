@@ -3,6 +3,9 @@ name: Fix Frequency + Recalculate Yields
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   patch-and-recalc:
     runs-on: ubuntu-latest
@@ -17,28 +20,12 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install pandas
-
-      - name: Show repo tree (debug)
-        run: |
-          pwd
-          ls -la
 
       - name: Run frequency fix + yield recalculation
         run: |
           python frequency_inference.py
-
-      - name: Show stats headers (debug)
-        run: |
-          python - << 'PY'
-import pandas as pd
-for f in ["yield_stats_canada.csv","yield_stats_us.csv"]:
-    try:
-        df = pd.read_csv(f, nrows=1)
-        print(f"\n{f} columns:", list(df.columns))
-    except Exception as e:
-        print(f"{f} not found or unreadable:", e)
-PY
 
       - name: Commit and push changes
         run: |
