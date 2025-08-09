@@ -1,13 +1,13 @@
-name: Run EMCL DividendHistory.org Only Scraper
+name: Run EMCL DividendHistory.org Scraper
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Manual run
 
 permissions:
   contents: write
 
 jobs:
-  run-emcl-divhist-only:
+  run-emcl-dho:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,18 +23,15 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pandas playwright
-          playwright install chromium
+          playwright install --with-deps chromium
 
-      - name: Run EMCL DividendHistory.org only scraper
+      - name: Run EMCL scraper
         run: python emcl_dividends_dho.py
 
       - name: Commit and push CSV
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -f "emcl_dividends_dho.csv" ]; then
-            git add emcl_dividends_dho.csv
-            git commit -m "Update EMCL DividendHistory.org only data" || echo "Nothing to commit"
-            git push
-          else
-            echo "⚠️ No CSV file to commit"
+          git add emcl_dividends_dho.csv
+          git commit -m "Update EMCL DividendHistory.org data" || echo "Nothing to commit"
+          git push
