@@ -1,4 +1,3 @@
-# This is a GitHub Actions workflow file (YAML format)
 name: Run EMCL DividendHistory.org Only Scraper
 
 on:
@@ -25,9 +24,14 @@ jobs:
           pip install --upgrade pip
           pip install pandas lxml requests
 
-      - name: Run EMCL DividendHistory.org only scraper
+      - name: Ensure correct Python script format
         run: |
-          python dividendhistory_only_scraper.py
+          if head -n 1 dividendhistory_only_scraper.py | grep -q '^name:'; then
+            echo "Error: dividendhistory_only_scraper.py contains non-Python content at the top." && exit 1
+          fi
+
+      - name: Run EMCL DividendHistory.org only scraper
+        run: python dividendhistory_only_scraper.py
 
       - name: Commit and push CSV
         run: |
