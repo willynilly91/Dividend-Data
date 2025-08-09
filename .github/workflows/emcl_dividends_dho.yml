@@ -1,5 +1,4 @@
-# .github/workflows/emcl_dividends_dho.yml
-name: EMCL DividendHistory.org Scrape (single-ticker)
+name: Run EMCL DividendHistory.org Only Scraper
 
 on:
   workflow_dispatch:
@@ -8,30 +7,29 @@ permissions:
   contents: write
 
 jobs:
-  scrape-and-commit:
+  run-emcl-divhist-only:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install dependencies (minimal, rest auto-installed in script)
         run: |
-          python -m pip install --upgrade pip
-          pip install requests lxml pandas
+          pip install --upgrade pip
 
-      - name: Run scraper
-        run: |
-          python emcl_dividends_dho.py
+      - name: Run EMCL DividendHistory.org only scraper
+        run: python emcl_dividends_dho.py
 
       - name: Commit and push CSV
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add emcl_dividends_dho.csv
-          git commit -m "Update EMCL dividendhistory.org data" || echo "No changes to commit"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add dividendhistory_emcl_only.csv
+          git commit -m "Update EMCL DividendHistory.org only data" || echo "Nothing to commit"
           git push
