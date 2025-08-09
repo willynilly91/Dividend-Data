@@ -1,10 +1,10 @@
-name: Update Dividend Frequencies
+name: Fix Frequency + Recalculate Yields
 
 on:
   workflow_dispatch:
 
 jobs:
-  update-frequencies:
+  patch-and-recalc:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -19,14 +19,32 @@ jobs:
         run: |
           pip install pandas
 
-      - name: Run frequency update script
+      - name: Show repo tree (debug)
+        run: |
+          pwd
+          ls -la
+
+      - name: Run frequency fix + yield recalculation
         run: |
           python frequency_inference.py
+
+      - name: Show stats headers (debug)
+        run: |
+          python - << 'PY'
+import pandas as pd
+for f in ["yield_stats_canada.csv","yield_stats_us.csv"]:
+    try:
+        df = pd.read_csv(f, nrows=1)
+        print(f"\n{f} columns:", list(df.columns))
+    except Exception as e:
+        print(f"{f} not found or unreadable:", e)
+PY
 
       - name: Commit and push changes
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add historical_yield_*.csv
-          git commit -m "Update dividend frequency data"
+          git add -A
+          git status
+          git commit -m "Update yield stats (median/mean columns)" || echo "No changes to commit"
           git push
