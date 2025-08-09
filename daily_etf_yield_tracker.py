@@ -47,9 +47,8 @@ FREQ_MULTIPLIER = {
 # ---------------------------
 def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
     # dividendhistory.org symbol format
-    # Normalize symbol for DividendHistory.org format
-      dho_symbol = symbol.replace(".TO", "").replace(".NE", "").replace(".UN", "-UN") if is_tsx else symbol
-      url = f"https://dividendhistory.org/payout/tsx/{dho_symbol}/" if is_tsx else f"https://dividendhistory.org/payout/{dho_symbol}/"
+    dho_symbol = symbol.replace(".TO", "") if is_tsx else symbol
+    url = f"https://dividendhistory.org/payout/tsx/{dho_symbol}/" if is_tsx else f"https://dividendhistory.org/payout/{dho_symbol}/"
 
     try:
         response = requests.get(url, timeout=10)
@@ -64,10 +63,8 @@ def get_dividend_data_from_dho(symbol: str, is_tsx: bool):
                 frequency = line.strip().split("Frequency:")[-1].strip()
                 break
 
-      # More robust table parsing
-        dividend_dates = [d.strip() for d in tree.xpath('//*[@id="dividend_table"]//tr/td[1]//text()') if d.strip()]
-        dividend_values = [v.strip() for v in tree.xpath('//*[@id="dividend_table"]//tr/td[3]//text()') if v.strip()]
-
+        dividend_dates = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[1]/text()')
+        dividend_values = tree.xpath('//*[@id="dividend_table"]/tbody/tr/td[3]/text()')
 
         if dividend_dates and dividend_values:
             last_dividend_date = dividend_dates[0].strip()
