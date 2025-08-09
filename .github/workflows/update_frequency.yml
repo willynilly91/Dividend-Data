@@ -1,0 +1,32 @@
+name: Update Dividend Frequencies
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-frequencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas
+
+      - name: Run frequency update script
+        run: |
+          python frequency_inference.py
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add historical_yield_*.csv
+          git commit -m "Update dividend frequency data"
+          git push
