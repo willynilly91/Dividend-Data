@@ -1,4 +1,4 @@
-name: Fix Frequency + Recalculate Yields
+name: Historical Dividend Refresh (5y) + Infer Frequency + Recalc Stats
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 jobs:
-  patch-and-recalc:
+  refresh-historical:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -21,17 +21,25 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pandas
+          pip install pandas requests lxml yfinance
 
-      - name: Run frequency fix + yield recalculation
+      - name: Show repo tree (debug)
         run: |
-          python frequency_inference.py
+          pwd
+          ls -la
+
+      - name: Run historical scrape (raw only)
+        run: |
+          python historical_yield_tracker.py
+
+      - name: Show changed files (debug)
+        run: |
+          git status
 
       - name: Commit and push changes
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add -A
-          git status
-          git commit -m "Update yield stats (median/mean columns)" || echo "No changes to commit"
+          git commit -m "Historical refresh + frequency inference + stats (5y)" || echo "No changes to commit"
           git push
