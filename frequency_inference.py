@@ -23,7 +23,6 @@ HISTORY_FILES = [
     ("historical_yield_us.csv",     "yield_stats_us.csv"),
 ]
 
-
 # ----------------------------
 # Helpers
 # ----------------------------
@@ -69,10 +68,10 @@ def normalize_freq_label(label: str) -> str:
         return "semi-annual"
     return s
 
-
 # ----------------------------
 # Core steps
 # ----------------------------
+
 def update_frequencies_inplace(path: str) -> pd.DataFrame | None:
     """Update/insert the Frequency column using next-date spacing (fallback to prev for last row)."""
     if not os.path.exists(path):
@@ -172,22 +171,26 @@ def regenerate_stats(history_csv: str, stats_csv: str):
         print(f"[SKIP STATS] {history_csv} empty or missing 'Annualized Yield %'.")
         return
 
-    good = df.dropna(subset=["Annualized Yield %"])
+    good = df.dropna(subset=["Annualized Yield %"])  # keep rows with valid yield
     if good.empty:
         print(f"[NOTE] No valid yield rows to summarize in {history_csv}")
         return
 
     g = good.groupby("Ticker")["Annualized Yield %"]
+
+    median_series = g.median()
+    mean_series = g.mean()
+    std_series = g.std()
+
     out = pd.DataFrame({
-        "Ticker": g.mean().index,
-        "Mean Yield %": g.mean().values,
-        "Median Yield %": g.median().values,
-        "Std Dev %": g.std().values,
-    }).sort_values(by="Mean Yield %", ascending=False)
+        "Ticker": median_series.index,
+        "Median Annualized Yield %": median_series.values,
+        "Mean Annualized Yield %": mean_series.reindex(median_series.index).values,
+        "Std Dev %": std_series.reindex(median_series.index).values,
+    }).sort_values(by="Median Annualized Yield %", ascending=False)
 
     out.to_csv(stats_csv, index=False)
-    print(f"✅ Updated stats: {stats_csv}")
-
+    print(f"✅ Updated stats (Median & Mean Annualized Yield): {stats_csv}")
 
 # ----------------------------
 # Main
@@ -195,8 +198,8 @@ def regenerate_stats(history_csv: str, stats_csv: str):
 if __name__ == "__main__":
     for hist_path, stats_path in HISTORY_FILES:
         # 1) Fix / infer frequency using next-date spacing
-        updated = update_frequencies_inplace(hist_path)
+        update_frequencies_inplace(hist_path)
         # 2) Recalculate yields using frequency multipliers
         recalc_yields_inplace(hist_path)
-        # 3) Regenerate summary stats (mean/median/std)
+        # 3) Regenerate summary stats (median as primary)
         regenerate_stats(hist_path, stats_path)
