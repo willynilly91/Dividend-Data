@@ -117,7 +117,7 @@ BABO,2025-04-24,0.659,14.858,53.225,monthly,yfinance
 BABO,2025-05-22,1.0,15.407,77.888,monthly,yfinance
 BABO,2025-06-20,0.431,14.752,35.059,monthly,yfinance
 BABO,2025-07-17,0.382,15.01,30.54,monthly,yfinance
-BETZ,2020-12-29,0.071,25.732,3.311,monthly,yfinance
+BETZ,2020-12-29,0.071,25.732,3.311,annual,yfinance
 BETZ,2022-12-13,0.095,15.686,7.268,annual,yfinance
 BETZ,2024-12-30,0.162,18.9,10.286,annual,yfinance
 BIGY,2025-01-08,0.513,46.767,13.163,monthly,yfinance
@@ -138,8 +138,8 @@ BITO,2023-08-01,0.385,6.172,74.855,monthly,yfinance
 BITO,2023-09-01,0.005,5.364,1.119,monthly,yfinance
 BITO,2023-10-02,0.074,5.843,15.198,monthly,yfinance
 BITO,2023-11-01,0.14,7.235,23.219,monthly,yfinance
-BITO,2023-12-01,0.127,8.008,19.032,monthly,yfinance
-BITO,2023-12-20,0.147,8.943,19.725,bi-weekly,yfinance
+BITO,2023-12-01,0.127,8.008,19.032,bi-weekly,yfinance
+BITO,2023-12-20,0.147,8.943,19.725,monthly,yfinance
 BITO,2024-02-01,0.356,8.684,49.196,monthly,yfinance
 BITO,2024-03-01,0.726,12.665,68.787,monthly,yfinance
 BITO,2024-04-01,1.145,13.873,99.04,monthly,yfinance
@@ -150,8 +150,8 @@ BITO,2024-08-01,1.447,12.223,142.06,monthly,yfinance
 BITO,2024-09-03,1.209,11.141,130.223,monthly,yfinance
 BITO,2024-10-01,1.091,11.812,110.832,monthly,yfinance
 BITO,2024-11-01,0.994,13.205,90.332,monthly,yfinance
-BITO,2024-12-02,0.996,18.152,65.845,monthly,yfinance
-BITO,2024-12-23,1.113,17.499,76.323,semi-monthly,yfinance
+BITO,2024-12-02,0.996,18.152,65.845,semi-monthly,yfinance
+BITO,2024-12-23,1.113,17.499,76.323,monthly,yfinance
 BITO,2025-02-03,0.937,18.873,59.579,monthly,yfinance
 BITO,2025-03-03,0.72,15.956,54.148,monthly,yfinance
 BITO,2025-04-01,0.361,15.667,27.65,monthly,yfinance
@@ -198,11 +198,11 @@ CRSH,2025-05-15,0.315,4.072,92.827,monthly,yfinance
 CRSH,2025-06-12,0.253,4.244,71.54,monthly,yfinance
 CRSH,2025-07-10,0.216,4.35,59.584,monthly,yfinance
 CRSH,2025-08-07,0.195,4.2,55.714,monthly,yfinance
-DEEP,2014-12-16,0.105,18.605,6.773,monthly,yfinance
+DEEP,2014-12-16,0.105,18.605,6.773,quarterly,yfinance
 DEEP,2015-03-17,0.136,19.955,8.179,quarterly,yfinance
-DEEP,2015-06-16,0.181,19.31,11.248,quarterly,yfinance
+DEEP,2015-06-16,0.181,19.31,11.248,semi-annual,yfinance
 DEEP,2015-12-29,0.44,17.701,29.829,semi-annual,yfinance
-DEEP,2016-06-14,0.111,18.108,7.356,semi-annual,yfinance
+DEEP,2016-06-14,0.111,18.108,7.356,quarterly,yfinance
 DEEP,2016-09-13,0.023,19.467,1.418,quarterly,yfinance
 DEEP,2016-12-28,0.19,21.448,10.63,quarterly,yfinance
 DEEP,2017-03-14,0.105,21.744,5.795,quarterly,yfinance
@@ -378,8 +378,8 @@ KLIP,2023-01-27,1.68,24.11,83.615,monthly,yfinance
 KLIP,2023-02-24,3.48,21.91,190.594,monthly,yfinance
 KLIP,2023-03-29,3.294,22.881,172.757,monthly,yfinance
 KLIP,2023-04-26,3.099,22.403,165.996,monthly,yfinance
-KLIP,2023-05-25,2.589,22.798,136.277,monthly,yfinance
-KLIP,2023-05-26,2.586,23.211,133.697,weekly,yfinance
+KLIP,2023-05-25,2.589,22.798,136.277,weekly,yfinance
+KLIP,2023-05-26,2.586,23.211,133.697,monthly,yfinance
 KLIP,2023-06-28,2.505,24.306,123.672,monthly,yfinance
 KLIP,2023-07-27,2.496,25.386,117.986,monthly,yfinance
 KLIP,2023-08-29,2.502,25.531,117.598,monthly,yfinance
@@ -440,7 +440,7 @@ MAXI,2025-04-25,0.3,24.795,14.519,monthly,yfinance
 MAXI,2025-05-27,0.5,32.471,18.478,monthly,yfinance
 MAXI,2025-06-25,0.35,28.626,14.672,monthly,yfinance
 MAXI,2025-07-28,1.0,32.764,36.626,monthly,yfinance
-METV,2022-12-13,0.006,7.827,0.92,monthly,yfinance
+METV,2022-12-13,0.006,7.827,0.92,annual,yfinance
 METV,2023-12-27,0.019,11.55,1.974,annual,yfinance
 MRNY,2023-12-07,0.413,6.489,76.37,monthly,yfinance
 MRNY,2024-01-05,2.654,8.334,382.128,monthly,yfinance
@@ -503,7 +503,7 @@ MSTY,2025-05-08,2.373,19.543,145.706,monthly,yfinance
 MSTY,2025-06-05,1.471,18.023,97.939,monthly,yfinance
 MSTY,2025-07-03,1.238,19.677,75.499,monthly,yfinance
 MSTY,2025-07-31,1.184,19.5,72.862,monthly,yfinance
-NERD,2019-12-27,0.05,15.283,3.926,monthly,yfinance
+NERD,2019-12-27,0.05,15.283,3.926,annual,yfinance
 NERD,2020-12-29,0.317,28.758,13.228,annual,yfinance
 NERD,2022-12-13,0.097,13.923,8.36,annual,yfinance
 NERD,2023-12-27,0.168,15.367,13.119,annual,yfinance
@@ -625,7 +625,7 @@ PYPY,2025-05-01,0.552,11.276,58.745,monthly,yfinance
 PYPY,2025-05-29,0.551,12.209,54.156,monthly,yfinance
 PYPY,2025-06-26,0.33,12.254,32.315,monthly,yfinance
 PYPY,2025-07-24,0.273,12.75,25.694,monthly,yfinance
-QDTE,2024-03-26,0.364,27.948,15.629,monthly,yfinance
+QDTE,2024-03-26,0.364,27.948,15.629,weekly,yfinance
 QDTE,2024-04-03,0.332,27.859,14.301,weekly,yfinance
 QDTE,2024-04-10,0.091,27.634,3.952,weekly,yfinance
 QDTE,2024-04-17,0.267,26.899,11.911,weekly,yfinance
@@ -722,7 +722,7 @@ QQQY,2024-06-03,2.403,23.386,123.306,monthly,yfinance
 QQQY,2024-07-01,1.971,24.441,96.773,monthly,yfinance
 QQQY,2024-07-31,2.502,23.872,125.771,monthly,yfinance
 QQQY,2024-09-03,3.459,23.166,179.175,monthly,yfinance
-QQQY,2024-10-01,1.994,23.899,100.121,monthly,yfinance
+QQQY,2024-10-01,1.994,23.899,100.121,weekly,yfinance
 QQQY,2024-10-10,0.345,24.252,17.071,weekly,yfinance
 QQQY,2024-10-17,0.276,24.257,13.654,weekly,yfinance
 QQQY,2024-10-24,0.274,24.267,13.549,weekly,yfinance
@@ -826,8 +826,8 @@ SVOL,2022-01-26,0.391,13.963,33.604,monthly,yfinance
 SVOL,2022-02-23,0.341,13.633,30.015,monthly,yfinance
 SVOL,2022-03-28,0.366,14.094,31.162,monthly,yfinance
 SVOL,2022-04-26,0.326,13.317,29.375,monthly,yfinance
-SVOL,2022-05-25,0.32,13.572,28.294,monthly,yfinance
-SVOL,2022-07-26,0.32,13.624,28.185,quarterly,yfinance
+SVOL,2022-05-25,0.32,13.572,28.294,quarterly,yfinance
+SVOL,2022-07-26,0.32,13.624,28.185,monthly,yfinance
 SVOL,2022-08-26,0.32,13.709,28.01,monthly,yfinance
 SVOL,2022-09-27,0.32,12.975,29.596,monthly,yfinance
 SVOL,2022-10-26,0.32,13.293,28.886,monthly,yfinance
@@ -867,8 +867,8 @@ SVOL,2025-07-28,0.3,17.32,20.785,monthly,yfinance
 TLTW,2022-09-02,0.556,24.059,27.732,monthly,yfinance
 TLTW,2022-10-04,0.644,23.018,33.574,monthly,yfinance
 TLTW,2022-11-02,0.621,21.555,34.572,monthly,yfinance
-TLTW,2022-12-02,0.487,23.024,25.382,monthly,yfinance
-TLTW,2022-12-23,0.517,22.182,27.968,semi-monthly,yfinance
+TLTW,2022-12-02,0.487,23.024,25.382,semi-monthly,yfinance
+TLTW,2022-12-23,0.517,22.182,27.968,monthly,yfinance
 TLTW,2023-02-02,0.464,23.757,23.438,monthly,yfinance
 TLTW,2023-03-02,0.309,22.095,16.782,monthly,yfinance
 TLTW,2023-04-04,0.648,23.811,32.657,monthly,yfinance
@@ -879,8 +879,8 @@ TLTW,2023-08-02,0.197,22.968,10.292,monthly,yfinance
 TLTW,2023-09-05,0.332,22.324,17.847,monthly,yfinance
 TLTW,2023-10-03,0.288,20.542,16.824,monthly,yfinance
 TLTW,2023-11-02,0.4,20.822,23.053,monthly,yfinance
-TLTW,2023-12-04,0.577,21.601,32.054,monthly,yfinance
-TLTW,2023-12-22,0.746,21.752,41.155,bi-weekly,yfinance
+TLTW,2023-12-04,0.577,21.601,32.054,bi-weekly,yfinance
+TLTW,2023-12-22,0.746,21.752,41.155,monthly,yfinance
 TLTW,2024-02-02,0.212,21.546,11.807,monthly,yfinance
 TLTW,2024-03-04,0.302,21.354,16.971,monthly,yfinance
 TLTW,2024-04-02,0.235,21.212,13.295,monthly,yfinance
@@ -891,8 +891,8 @@ TLTW,2024-08-02,0.22,22.538,11.714,monthly,yfinance
 TLTW,2024-09-04,0.28,23.118,14.534,monthly,yfinance
 TLTW,2024-10-02,0.208,23.175,10.77,monthly,yfinance
 TLTW,2024-11-04,0.252,22.054,13.712,monthly,yfinance
-TLTW,2024-12-03,0.331,22.229,17.868,monthly,yfinance
-TLTW,2024-12-20,0.593,21.517,33.072,bi-weekly,yfinance
+TLTW,2024-12-03,0.331,22.229,17.868,bi-weekly,yfinance
+TLTW,2024-12-20,0.593,21.517,33.072,monthly,yfinance
 TLTW,2025-02-04,0.388,21.688,21.468,monthly,yfinance
 TLTW,2025-03-04,0.259,22.324,13.922,monthly,yfinance
 TLTW,2025-04-02,0.258,22.602,13.698,monthly,yfinance
@@ -957,7 +957,7 @@ ULTY,2024-11-14,0.831,5.276,189.006,monthly,yfinance
 ULTY,2024-12-12,0.709,5.46,155.83,monthly,yfinance
 ULTY,2025-01-08,0.572,5.307,129.327,monthly,yfinance
 ULTY,2025-02-06,0.537,5.431,118.66,monthly,yfinance
-ULTY,2025-03-06,0.465,4.81,116.009,monthly,yfinance
+ULTY,2025-03-06,0.465,4.81,116.009,weekly,yfinance
 ULTY,2025-03-13,0.103,4.491,27.521,weekly,yfinance
 ULTY,2025-03-20,0.098,4.77,24.652,weekly,yfinance
 ULTY,2025-03-27,0.099,4.695,25.304,weekly,yfinance
@@ -992,8 +992,8 @@ USOY,2025-02-03,1.007,9.21,131.206,monthly,yfinance
 USOY,2025-03-03,0.706,8.891,95.289,monthly,yfinance
 USOY,2025-04-01,0.805,9.163,105.425,monthly,yfinance
 USOY,2025-05-01,0.539,8.045,80.396,monthly,yfinance
-USOY,2025-06-02,0.77,8.456,109.272,monthly,yfinance
-USOY,2025-06-18,0.146,9.033,19.395,bi-weekly,yfinance
+USOY,2025-06-02,0.77,8.456,109.272,bi-weekly,yfinance
+USOY,2025-06-18,0.146,9.033,19.395,weekly,yfinance
 USOY,2025-06-26,0.2,8.453,28.391,weekly,yfinance
 USOY,2025-07-03,0.14,8.636,19.454,weekly,yfinance
 USOY,2025-07-10,0.184,8.684,25.427,weekly,yfinance
@@ -1013,9 +1013,9 @@ WDTE,2024-06-03,1.659,30.675,64.901,monthly,yfinance
 WDTE,2024-07-01,1.386,31.724,52.426,monthly,yfinance
 WDTE,2024-07-31,1.674,31.469,63.834,monthly,yfinance
 WDTE,2024-09-03,2.757,31.107,106.357,monthly,yfinance
-WDTE,2024-10-01,1.809,32.068,67.693,monthly,yfinance
-WDTE,2024-10-10,0.334,32.292,12.412,weekly,yfinance
-WDTE,2024-10-24,0.253,32.123,9.451,bi-weekly,yfinance
+WDTE,2024-10-01,1.809,32.068,67.693,weekly,yfinance
+WDTE,2024-10-10,0.334,32.292,12.412,bi-weekly,yfinance
+WDTE,2024-10-24,0.253,32.123,9.451,weekly,yfinance
 WDTE,2024-10-31,0.25,31.737,9.453,weekly,yfinance
 WDTE,2024-11-07,0.287,32.443,10.616,weekly,yfinance
 WDTE,2024-11-14,0.335,32.633,12.319,weekly,yfinance
@@ -1024,8 +1024,8 @@ WDTE,2024-11-27,0.289,32.772,10.582,weekly,yfinance
 WDTE,2024-12-05,0.202,33.073,7.329,weekly,yfinance
 WDTE,2024-12-12,0.207,32.857,7.56,weekly,yfinance
 WDTE,2024-12-19,0.183,31.938,6.876,weekly,yfinance
-WDTE,2024-12-26,0.238,32.49,8.79,weekly,yfinance
-WDTE,2025-01-08,0.234,31.694,8.86,bi-weekly,yfinance
+WDTE,2024-12-26,0.238,32.49,8.79,bi-weekly,yfinance
+WDTE,2025-01-08,0.234,31.694,8.86,weekly,yfinance
 WDTE,2025-01-16,0.229,32.092,8.563,weekly,yfinance
 WDTE,2025-01-23,0.14,32.806,5.121,weekly,yfinance
 WDTE,2025-01-30,0.099,32.541,3.651,weekly,yfinance
@@ -1056,7 +1056,7 @@ WDTE,2025-07-17,0.205,33.69,7.302,weekly,yfinance
 WDTE,2025-07-24,0.206,34.06,7.258,weekly,yfinance
 WDTE,2025-07-31,0.166,34.165,5.83,weekly,yfinance
 WDTE,2025-08-07,0.203,33.877,7.191,weekly,yfinance
-XDTE,2024-03-26,0.209,36.349,6.9,monthly,yfinance
+XDTE,2024-03-26,0.209,36.349,6.9,weekly,yfinance
 XDTE,2024-04-03,0.129,36.375,4.256,weekly,yfinance
 XDTE,2024-04-10,0.022,35.971,0.734,weekly,yfinance
 XDTE,2024-04-17,0.195,35.198,6.648,weekly,yfinance
@@ -1189,7 +1189,7 @@ YBTC,2024-08-29,1.612,27.566,70.172,monthly,yfinance
 YBTC,2024-09-27,2.11,29.781,85.022,monthly,yfinance
 YBTC,2024-10-30,0.884,32.754,32.387,monthly,yfinance
 YBTC,2024-11-27,1.773,37.748,56.363,monthly,yfinance
-YBTC,2024-12-30,1.632,38.344,51.075,monthly,yfinance
+YBTC,2024-12-30,1.632,38.344,51.075,weekly,yfinance
 YBTC,2025-01-02,1.036,38.981,31.892,weekly,yfinance
 YBTC,2025-01-08,0.535,38.225,16.795,weekly,yfinance
 YBTC,2025-01-16,0.35,40.305,10.421,weekly,yfinance
@@ -1231,7 +1231,7 @@ YETH,2025-02-27,1.893,25.414,89.383,monthly,yfinance
 YETH,2025-03-28,1.515,21.751,83.582,monthly,yfinance
 YETH,2025-04-29,1.089,20.417,64.005,monthly,yfinance
 YETH,2025-05-29,1.352,21.995,73.762,monthly,yfinance
-YETH,2025-07-02,1.52,22.629,80.605,monthly,yfinance
+YETH,2025-07-02,1.52,22.629,80.605,weekly,yfinance
 YETH,2025-07-09,0.359,23.833,18.076,weekly,yfinance
 YETH,2025-07-16,0.385,25.628,18.027,weekly,yfinance
 YETH,2025-07-23,0.345,26.039,15.899,weekly,yfinance
@@ -1244,7 +1244,7 @@ YMAG,2024-05-15,0.637,11.956,63.934,monthly,yfinance
 YMAG,2024-06-14,0.677,12.706,63.937,monthly,yfinance
 YMAG,2024-07-17,0.637,12.816,59.642,monthly,yfinance
 YMAG,2024-08-15,0.576,12.432,55.596,monthly,yfinance
-YMAG,2024-09-19,0.198,12.848,18.493,monthly,yfinance
+YMAG,2024-09-19,0.198,12.848,18.493,weekly,yfinance
 YMAG,2024-09-26,0.17,13.015,15.674,weekly,yfinance
 YMAG,2024-10-03,0.164,12.85,15.316,weekly,yfinance
 YMAG,2024-10-10,0.282,13.014,26.004,weekly,yfinance
@@ -1298,7 +1298,7 @@ YMAX,2024-05-15,0.732,10.686,82.204,monthly,yfinance
 YMAX,2024-06-14,0.73,10.822,80.945,monthly,yfinance
 YMAX,2024-07-17,0.652,10.967,71.344,monthly,yfinance
 YMAX,2024-08-15,0.591,10.416,68.091,monthly,yfinance
-YMAX,2024-09-19,0.227,10.593,25.714,monthly,yfinance
+YMAX,2024-09-19,0.227,10.593,25.714,weekly,yfinance
 YMAX,2024-09-26,0.222,10.781,24.71,weekly,yfinance
 YMAX,2024-10-03,0.208,10.598,23.551,weekly,yfinance
 YMAX,2024-10-10,0.204,10.803,22.661,weekly,yfinance
