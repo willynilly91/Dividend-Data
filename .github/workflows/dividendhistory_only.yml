@@ -1,15 +1,14 @@
-name: Run DividendHistory.org Only Scraper
+# This is a GitHub Actions workflow file (YAML format)
+name: Run EMCL DividendHistory.org Only Scraper
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 8 * * 1'  # Weekly on Monday at 08:00 UTC
 
 permissions:
   contents: write
 
 jobs:
-  run-divhist-only:
+  run-emcl-divhist-only:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,13 +25,14 @@ jobs:
           pip install --upgrade pip
           pip install pandas lxml requests
 
-      - name: Run DividendHistory.org only scraper
-        run: python dividendhistory_only_scraper.py
+      - name: Run EMCL DividendHistory.org only scraper
+        run: |
+          python dividendhistory_only_scraper.py
 
-      - name: Commit and push CSVs
+      - name: Commit and push CSV
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add dividendhistory_only_canada.csv dividendhistory_only_us.csv
-          git commit -m "Update DividendHistory.org only data" || echo "Nothing to commit"
+          git add dividendhistory_emcl_only.csv
+          git commit -m "Update EMCL DividendHistory.org only data" || echo "Nothing to commit"
           git push
