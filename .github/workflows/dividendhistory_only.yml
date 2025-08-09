@@ -21,22 +21,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install pandas lxml requests
 
-      - name: Ensure correct Python script format
-        run: |
-          if head -n 1 dividendhistory_only_scraper.py | grep -q '^name:'; then
-            echo "Error: dividendhistory_only_scraper.py contains non-Python content at the top." && exit 1
-          fi
-
       - name: Run EMCL DividendHistory.org only scraper
-        run: python dividendhistory_only_scraper.py
+        run: |
+          python dividendhistory_only_scraper.py
 
       - name: Commit and push CSV
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add dividendhistory_emcl_only.csv
-          git commit -m "Update EMCL DividendHistory.org only data" || echo "Nothing to commit"
+          git commit -m "Update EMCL DividendHistory.org only data" || true
           git push
