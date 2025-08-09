@@ -1,4 +1,3 @@
-
 # historical_yield_tracker.py
 """
 Builds raw historical dividend records for Canada and US tickers.
