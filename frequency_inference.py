@@ -23,20 +23,7 @@ HISTORY_FILES = [
     ("historical_yield_us.csv",     "yield_stats_us.csv"),
 ]
 
-# ----------------------------
-# Helpers
-# ----------------------------
-def _to_float(x):
-    s = str(x).strip().replace(",", "").replace("$", "")
-    if s in ("", "-", "—", "None", "nan", "NaN"):
-        return float("nan")
-    try:
-        return float(s)
-    except Exception:
-        s = "".join(ch for ch in s if (ch.isdigit() or ch == "." or ch == "-"))
-        return float(s) if s else float("nan")
-
-
+# How we map day-gaps to frequency labels (unchanged)
 def infer_frequency_from_days(days: float) -> str:
     """Map days-between to a frequency label."""
     if pd.isna(days) or days <= 0:
@@ -55,6 +42,18 @@ def infer_frequency_from_days(days: float) -> str:
         return "semi-annual"
     return "annual"
 
+# ----------------------------
+# Helpers
+# ----------------------------
+def _to_float(x):
+    s = str(x).strip().replace(",", "").replace("$", "")
+    if s in ("", "-", "—", "None", "nan", "NaN"):
+        return float("nan")
+    try:
+        return float(s)
+    except Exception:
+        s = "".join(ch for ch in s if (ch.isdigit() or ch == "." or ch == "-"))
+        return float(s) if s else float("nan")
 
 def normalize_freq_label(label: str) -> str:
     if pd.isna(label):
@@ -68,12 +67,31 @@ def normalize_freq_label(label: str) -> str:
         return "semi-annual"
     return s
 
+def rel_diff(a: float, b: float) -> float:
+    """Relative difference in [0, 1]; NaN if either is NaN."""
+    if pd.isna(a) or pd.isna(b):
+        return float("nan")
+    m = max(abs(a), abs(b))
+    if m == 0:
+        return 0.0
+    return abs(a - b) / m
+
 # ----------------------------
-# Core steps
+# Core steps (improved logic)
 # ----------------------------
 
 def update_frequencies_inplace(path: str) -> pd.DataFrame | None:
-    """Update/insert the Frequency column using next-date spacing (fallback to prev for last row)."""
+    """
+    Update/insert the Frequency column using a *hybrid* approach:
+      1) For each row, compute spacing to NEXT and PREV ex-div dates.
+      2) Decide whether to use NEXT or PREV spacing based on which neighbor's
+         dividend AMOUNT is more similar to the current one (lower relative diff),
+         with a slight bias toward NEXT (to keep original behavior when amounts are close).
+      3) Map the chosen spacing to a frequency label.
+
+    This fixes cases like a final monthly (large amount) followed by new weekly cadence (smaller amount):
+    we will prefer the PREV spacing because the current amount is closer to the previous regime.
+    """
     if not os.path.exists(path):
         print(f"[SKIP] {path} not found.")
         return None
@@ -83,123 +101,19 @@ def update_frequencies_inplace(path: str) -> pd.DataFrame | None:
         print(f"[SKIP] {path} is empty.")
         return None
 
-    for col in ("Ticker", "Ex-Div Date"):
+    for col in ("Ticker", "Ex-Div Date", "Dividend"):
         if col not in df.columns:
             print(f"[SKIP] {path} missing required column: {col}")
             return None
 
+    # Normalize types
     df["Ex-Div Date"] = pd.to_datetime(df["Ex-Div Date"], errors="coerce").dt.normalize()
     df = df.dropna(subset=["Ex-Div Date"])
+    df["Dividend"] = df["Dividend"].apply(_to_float)
 
     out_frames = []
     for ticker, g in df.sort_values(["Ticker", "Ex-Div Date"]).groupby("Ticker", sort=False):
         g = g.copy().reset_index(drop=True)
-        g["next_date"] = g["Ex-Div Date"].shift(-1)
-        g["prev_date"] = g["Ex-Div Date"].shift(1)
 
-        days_to_next = (g["next_date"] - g["Ex-Div Date"]).dt.days
-        days_from_prev = (g["Ex-Div Date"] - g["prev_date"]).dt.days
-
-        # Prefer spacing to NEXT payment; if missing or invalid, use spacing from PREVIOUS
-        days = days_to_next.where(days_to_next.notna() & (days_to_next > 0), days_from_prev)
-
-        g["Frequency"] = days.apply(infer_frequency_from_days)
-        g.drop(columns=["next_date", "prev_date"], inplace=True)
-        out_frames.append(g)
-
-    result = pd.concat(out_frames, ignore_index=True)
-
-    # Place Frequency after Ex-Div Date if it didn't exist before
-    if "Frequency" not in df.columns:
-        cols = list(result.columns)
-        cols.remove("Frequency")
-        try:
-            insert_at = cols.index("Ex-Div Date") + 1
-        except ValueError:
-            insert_at = len(cols)
-        cols = cols[:insert_at] + ["Frequency"] + cols[insert_at:]
-        result = result[cols]
-
-    result.to_csv(path, index=False)
-    print(f"✅ Updated Frequency in {path}")
-    return result
-
-
-def recalc_yields_inplace(path: str):
-    """Recalculate Annualized Yield % in-place using the (now corrected) Frequency."""
-    if not os.path.exists(path):
-        print(f"[SKIP] {path} not found.")
-        return
-
-    df = pd.read_csv(path)
-    if df.empty:
-        print(f"[SKIP] {path} is empty.")
-        return
-
-    required = {"Dividend", "Price on Ex-Date", "Frequency"}
-    if not required.issubset(df.columns):
-        print(f"[SKIP] {path} missing required columns: {required - set(df.columns)}")
-        return
-
-    df["Dividend"] = df["Dividend"].apply(_to_float)
-    df["Price on Ex-Date"] = df["Price on Ex-Date"].apply(_to_float)
-    df["Frequency"] = df["Frequency"].apply(normalize_freq_label)
-
-    def calc_row(freq: str, div: float, price: float) -> float:
-        try:
-            mult = FREQ_MULTIPLIER.get(freq, 12)  # default monthly
-            if pd.isna(div) or pd.isna(price) or price == 0:
-                return float("nan")
-            return round((div * mult / price) * 100.0, 4)
-        except Exception:
-            return float("nan")
-
-    df["Annualized Yield %"] = [
-        calc_row(f, d, p) for f, d, p in zip(df["Frequency"], df["Dividend"], df["Price on Ex-Date"])
-    ]
-
-    df.to_csv(path, index=False)
-    print(f"✅ Recalculated Annualized Yield % in {path}")
-
-
-def regenerate_stats(history_csv: str, stats_csv: str):
-    if not os.path.exists(history_csv):
-        print(f"[SKIP STATS] {history_csv} not found.")
-        return
-    df = pd.read_csv(history_csv)
-    if df.empty or "Annualized Yield %" not in df.columns:
-        print(f"[SKIP STATS] {history_csv} empty or missing 'Annualized Yield %'.")
-        return
-
-    good = df.dropna(subset=["Annualized Yield %"])  # keep rows with valid yield
-    if good.empty:
-        print(f"[NOTE] No valid yield rows to summarize in {history_csv}")
-        return
-
-    g = good.groupby("Ticker")["Annualized Yield %"]
-
-    median_series = g.median()
-    mean_series = g.mean()
-    std_series = g.std()
-
-    out = pd.DataFrame({
-        "Ticker": median_series.index,
-        "Median Annualized Yield %": median_series.values,
-        "Mean Annualized Yield %": mean_series.reindex(median_series.index).values,
-        "Std Dev %": std_series.reindex(median_series.index).values,
-    }).sort_values(by="Median Annualized Yield %", ascending=False)
-
-    out.to_csv(stats_csv, index=False)
-    print(f"✅ Updated stats (Median & Mean Annualized Yield): {stats_csv}")
-
-# ----------------------------
-# Main
-# ----------------------------
-if __name__ == "__main__":
-    for hist_path, stats_path in HISTORY_FILES:
-        # 1) Fix / infer frequency using next-date spacing
-        update_frequencies_inplace(hist_path)
-        # 2) Recalculate yields using frequency multipliers
-        recalc_yields_inplace(hist_path)
-        # 3) Regenerate summary stats (median as primary)
-        regenerate_stats(hist_path, stats_path)
+        # Neighbor dates & amounts
+        g["next_date"]_]()
