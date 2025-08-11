@@ -26,8 +26,9 @@ import yfinance as yf
 # Settings
 # ---------------------------
 PRICE_CACHE = "price_cache.json"
-AUTO_RUN_INFERENCE = True  # set False if you want to run frequency_inference.py separately
-SLEEP_SECS = (0.2, 0.6)    # jitter between requests to be gentle on sites
+CACHE_VERSION = "rawclose_v1"   # bump this if you change price logic
+AUTO_RUN_INFERENCE = True       # set False if you want to run frequency_inference.py separately
+SLEEP_SECS = (0.2, 0.6)         # jitter between requests to be gentle on sites
 YEARS_BACK = 5
 
 CANADA_TICKERS_FILE = "tickers_canada.txt"
@@ -122,21 +123,48 @@ def fetch_dividends_from_yf(symbol: str, is_tsx: bool) -> list[tuple[str, str]]:
         print(f"[YF DIV FAIL] {symbol}: {e}")
         return []
 
+# ---------------------------
+# Price (raw Close) on a given date
+# ---------------------------
 
 def get_price_on_date(symbol: str, date_str: str) -> float | None:
-    key = f"{symbol}_{date_str}"
+    """
+    Fetches RAW (unadjusted) Close from Yahoo Finance for the given symbol on date_str (YYYY-MM-DD).
+    Uses yf.download with auto_adjust=False and caches by date.
+    """
+    key = f"{CACHE_VERSION}:{symbol}:{date_str}"
     if key in PRICE_CACHE_MEM:
         return PRICE_CACHE_MEM[key]
+
     try:
-        t = yf.Ticker(symbol)
         dt = pd.to_datetime(date_str)
-        hist = t.history(start=dt.strftime('%Y-%m-%d'), end=(dt + pd.Timedelta(days=1)).strftime('%Y-%m-%d'))
-        if not hist.empty:
-            price = float(hist.iloc[0]['Close'])
+        start = dt.strftime("%Y-%m-%d")
+        end = (dt + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+        hist = yf.download(
+            tickers=symbol,
+            start=start,
+            end=end,
+            interval="1d",
+            auto_adjust=False,  # critical: ensure unadjusted OHLC
+            actions=False,
+            progress=False
+        )
+
+        if isinstance(hist, pd.DataFrame) and not hist.empty:
+            # Prefer the row that matches the ex-date after index normalization
+            row = hist.loc[hist.index.normalize() == dt.normalize()]
+            if not row.empty:
+                price = float(row.iloc[0]["Close"])
+            else:
+                price = float(hist.iloc[0]["Close"])
+
             PRICE_CACHE_MEM[key] = price
             return price
+
     except Exception as e:
         print(f"[YF PRICE FAIL] {symbol} {date_str}: {e}")
+
     return None
 
 # ---------------------------
