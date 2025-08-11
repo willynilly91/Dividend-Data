@@ -1,45 +1,69 @@
-name: Historical Dividend Refresh (5y) + Infer Frequency + Recalc Stats
+name: Update Frequencies
 
 on:
+  # Run on demand from the Actions tab
   workflow_dispatch:
+  # Run whenever the historical files or the script itself change
+  push:
+    paths:
+      - "frequency_inference.py"
+      - "historical_yield_*.csv"
+  # Optional: run daily at 3:15 UTC
+  schedule:
+    - cron: "15 3 * * *"
 
 permissions:
-  contents: write
+  contents: write   # needed to push changes back with GITHUB_TOKEN
+
+concurrency:
+  group: update-frequencies
+  cancel-in-progress: false
 
 jobs:
-  refresh-historical:
+  run-frequency-inference:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install pandas requests lxml yfinance
+          python -m pip install --upgrade pip
+          pip install pandas
 
-      - name: Show repo tree (debug)
+      - name: Run frequency inference
         run: |
-          pwd
-          ls -la
+          python frequency_inference.py
 
-      - name: Run historical scrape (raw only)
-        run: |
-          python historical_yield_tracker.py
-
-      - name: Show changed files (debug)
+      - name: Show changes (if any)
         run: |
           git status
+          git diff --name-only || true
 
-      - name: Commit and push changes
+      - name: Commit changes
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m "Historical refresh + frequency inference + stats (5y)" || echo "No changes to commit"
-          git push
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: update Frequency via frequency_inference.py"
+          else
+            echo "No changes to commit."
+          fi
+
+      - name: Push changes
+        if: always()
+        run: |
+          if [[ -n "$(git log -1 --pretty=%B | grep 'chore: update Frequency')" ]]; then
+            git push
+          else
+            echo "Nothing to push."
+          fi
