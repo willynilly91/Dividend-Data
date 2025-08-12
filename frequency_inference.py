@@ -5,16 +5,14 @@ Infer and (re)write cash distribution Frequency per row using a hybrid neighbor-
 Logic per Ticker (sorted by Ex-Div Date ascending):
   1) Compute spacing in days to the NEXT and PREV ex-div dates.
   2) Compare how similar the current Dividend AMOUNT is to the neighbor's amount:
-       - Use relative difference (|a-b| / max(|a|,|b|)).
+       - Use relative difference elementwise.
        - Prefer the neighbor whose amount is closer to the current amount,
          with a small bias toward NEXT to preserve forward-looking behavior.
   3) Map the chosen day-gap to a frequency label.
   4) (Optional) If 'Annualized Yield %' exists, recompute it using:
        annualized_yield = (Dividend * FREQ_MULTIPLIER[Frequency]) / Price_on_Ex_Date * 100
 
-Input files are updated IN-PLACE.
-
-Files covered (in repo root by default):
+Files updated IN-PLACE:
   - historical_yield_canada.csv
   - historical_yield_us.csv
 """
@@ -22,8 +20,8 @@ Files covered (in repo root by default):
 from __future__ import annotations
 import os
 import sys
-import math
 import pandas as pd
+import numpy as np
 
 # ----------------------------
 # Config
@@ -42,7 +40,6 @@ FREQ_MULTIPLIER = {
     "annually": 1,         # normalized to annual
 }
 
-# (stats files are listed but not modified here; kept for symmetry with your project layout)
 HISTORY_FILES = [
     ("historical_yield_canada.csv", "yield_stats_canada.csv"),
     ("historical_yield_us.csv",     "yield_stats_us.csv"),
@@ -82,38 +79,38 @@ def _to_float(x) -> float:
         s = "".join(ch for ch in s if (ch.isdigit() or ch == "." or ch == "-"))
         return float(s) if s else float("nan")
 
-def normalize_freq_label(label: str) -> str:
-    if pd.isna(label):
-        return ""
-    s = str(label).strip().lower().replace("_", "").replace(" ", "")
-    if s == "biweekly":
-        return "bi-weekly"
-    if s == "semimonthly":
-        return "semi-monthly"
-    if s == "semiannual":
-        return "semi-annual"
+def normalize_freq_key(series: pd.Series) -> pd.Series:
+    """Normalize frequency labels to keys for FREQ_MULTIPLIER."""
+    s = (
+        series.astype(str)
+        .str.lower()
+        .str.strip()
+        .str.replace("_", "", regex=False)
+        .str.replace(" ", "", regex=False)
+        .replace({"biweekly":"bi-weekly", "semimonthly":"semi-monthly", "semiannual":"semi-annual"})
+    )
     return s
 
-def rel_diff(a: float, b: float) -> float:
-    """Relative difference in [0, 1]; NaN if either is NaN."""
-    if pd.isna(a) or pd.isna(b):
-        return float("nan")
-    m = max(abs(a), abs(b))
-    if m == 0:
-        return 0.0
-    return abs(a - b) / m
+def rel_diff_series(a: pd.Series, b: pd.Series) -> pd.Series:
+    """
+    Elementwise relative difference in [0,1]: |a-b| / max(|a|,|b|)
+    Returns NaN where either side is NaN.
+    """
+    a = a.astype(float)
+    b = b.astype(float)
+    m = np.maximum(np.abs(a), np.abs(b))
+    out = np.where(m == 0, 0.0, np.abs(a - b) / m)
+    out = pd.Series(out, index=a.index, dtype="float64")
+    # set NaN where either input is NaN
+    out[pd.isna(a) | pd.isna(b)] = np.nan
+    return out
 
 # ----------------------------
 # Core
 # ----------------------------
 def update_frequencies_inplace(path: str) -> pd.DataFrame | None:
     """
-    Update/insert the Frequency column using a *hybrid* approach:
-      - Consider spacing to NEXT and PREV ex-div dates.
-      - Choose the neighbor whose dividend amount is closer to the current amount,
-        with a small bias toward NEXT (keeps forward-looking behavior when amounts are similar).
-      - Map chosen spacing (days) to a frequency label.
-      - Recompute 'Annualized Yield %' if present.
+    Update/insert the Frequency column using a *hybrid* approach (NEXT vs PREV neighbor).
     """
     if not os.path.exists(path):
         print(f"[SKIP] {path} not found.")
@@ -134,82 +131,66 @@ def update_frequencies_inplace(path: str) -> pd.DataFrame | None:
     df = df.dropna(subset=["Ex-Div Date"]).copy()
     df["Dividend"] = df["Dividend"].apply(_to_float)
 
-    # Keep original columns to preserve ordering when we write back
     original_cols = list(df.columns)
-
     out_frames = []
+
     for ticker, g in df.sort_values(["Ticker", "Ex-Div Date"]).groupby("Ticker", sort=False):
         g = g.copy().reset_index(drop=True)
 
         # Neighbor dates & amounts
         g["next_date"] = g["Ex-Div Date"].shift(-1)
         g["prev_date"] = g["Ex-Div Date"].shift(1)
-        g["next_amt"] = g["Dividend"].shift(-1)
-        g["prev_amt"] = g["Dividend"].shift(1)
+        g["next_amt"]  = g["Dividend"].shift(-1)
+        g["prev_amt"]  = g["Dividend"].shift(1)
 
         # Day gaps
         g["days_to_next"] = (g["next_date"] - g["Ex-Div Date"]).dt.days
         g["days_to_prev"] = (g["Ex-Div Date"] - g["prev_date"]).dt.days
 
-        # Relative diffs to neighbor amounts
-        g["reldiff_next"] = rel_diff(g["Dividend"], g["next_amt"])
-        g["reldiff_prev"] = rel_diff(g["Dividend"], g["prev_amt"])
+        # Relative diffs (vectorized)
+        g["reldiff_next"] = rel_diff_series(g["Dividend"], g["next_amt"])
+        g["reldiff_prev"] = rel_diff_series(g["Dividend"], g["prev_amt"])
 
-        # Decide whether to prefer PREV spacing when it's clearly closer in amount
-        # Bias: require prev to be closer by > 5% than next to override.
+        # Prefer PREV only if it's clearly closer by >5% than NEXT
         prefer_prev = (g["reldiff_prev"] + 0.05) < g["reldiff_next"]
 
-        # Pick the spacing to use
+        # Choose spacing to use
         g["freq_days"] = g["days_to_next"]
         g.loc[prefer_prev, "freq_days"] = g.loc[prefer_prev, "days_to_prev"]
 
         # Map to frequency labels
         g["Frequency"] = g["freq_days"].apply(infer_frequency_from_days)
 
-        # Clean up helper cols before concatenation
+        # Drop helper cols
         g = g.drop(columns=[
-            "next_date", "prev_date", "next_amt", "prev_amt",
-            "days_to_next", "days_to_prev", "reldiff_next", "reldiff_prev", "freq_days"
+            "next_date","prev_date","next_amt","prev_amt",
+            "days_to_next","days_to_prev","reldiff_next","reldiff_prev","freq_days"
         ])
 
         out_frames.append(g)
 
     out = pd.concat(out_frames, ignore_index=True)
 
-    # Optional: recompute 'Annualized Yield %' if column exists and required inputs are available
+    # Optional: recompute Annualized Yield % if present and price exists
     if "Annualized Yield %" in out.columns:
-        # normalize label to multiplier key
-        freq_key = out["Frequency"].astype(str).str.lower().str.strip()
-        freq_key = (
-            freq_key.str.replace("_", "", regex=False)
-                    .str.replace(" ", "", regex=False)
-        ).replace({
-            "biweekly": "bi-weekly",
-            "semimonthly": "semi-monthly",
-            "semiannual": "semi-annual",
-        })
-        mult = freq_key.map(FREQ_MULTIPLIER).fillna(12)  # conservative default = monthly
-        price_col = "Price on Ex-Date" if "Price on Ex-Date" in out.columns else None
-
-        if price_col is not None:
-            # safe numeric
-            price = out[price_col].apply(_to_float)
-            div = out["Dividend"].apply(_to_float)
-            with pd.option_context('mode.use_inf_as_na', True):
+        if "Price on Ex-Date" in out.columns:
+            price = out["Price on Ex-Date"].apply(_to_float)
+            div   = out["Dividend"].apply(_to_float)
+            freq_key = normalize_freq_key(out["Frequency"])
+            mult = freq_key.map(FREQ_MULTIPLIER).fillna(12)  # default to monthly if unknown
+            with pd.option_context("mode.use_inf_as_na", True):
                 out["Annualized Yield %"] = (div * mult / price) * 100
         else:
-            print("[WARN] 'Price on Ex-Date' column missing; skipping Annualized Yield % recompute.")
+            print("[WARN] Missing 'Price on Ex-Date'; skipping Annualized Yield % recompute.")
 
-    # Restore original column order where possible; ensure Frequency present
+    # Preserve original column order where possible
     if "Frequency" not in original_cols:
-        # append Frequency at the end if it wasn’t present originally
         cols = [c for c in original_cols if c in out.columns] + [c for c in out.columns if c not in original_cols]
     else:
-        cols = original_cols  # overwrite existing Frequency in-place
+        cols = original_cols
 
     out = out[cols]
 
-    # Write back IN-PLACE
     out.to_csv(path, index=False)
     print(f"[OK] Updated frequencies in {path} (rows: {len(out)})")
     return out
@@ -218,20 +199,19 @@ def update_frequencies_inplace(path: str) -> pd.DataFrame | None:
 # Main
 # ----------------------------
 def main(argv: list[str]) -> int:
-    # Allow optional CLI paths; otherwise use defaults
+    # Allow optional CLI arguments for custom CSV paths
     if len(argv) > 1:
-        # user can pass specific CSVs to update
         targets = [(p, None) for p in argv[1:]]
     else:
         targets = HISTORY_FILES
 
     any_success = False
-    for hist_csv, _stats_csv in targets:
+    for hist_csv, _ in targets:
         try:
             res = update_frequencies_inplace(hist_csv)
             any_success = any_success or (res is not None and not res.empty)
         except Exception as e:
-            print(f"[ERROR] Failed to update {hist_csv}: {e}")
+            print(f"Error:  Failed to update {hist_csv}: {e}")
 
     return 0 if any_success else 1
 
