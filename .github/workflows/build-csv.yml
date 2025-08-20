@@ -1,0 +1,32 @@
+name: Build TSX Dividends CSV
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # allow manual run
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install --upgrade pip
+
+      - name: Run parser
+        run: |
+          python3 parse_tickers_to_csv.py -i raw_tickers.txt -o tsx_dividends.csv
+
+      - name: Upload CSV artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsx_dividends
+          path: tsx_dividends.csv
